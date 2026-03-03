@@ -1,0 +1,315 @@
+---
+title: 'Error Handling'
+description: 'Learn how to handle errors when using the Limrun SDK'
+---
+
+## Overview
+
+When the Limrun SDK is unable to connect to the API or receives a non-success status code (4xx or 5xx), it throws a subclass of `APIError`. All error classes are exported from the main SDK package for easy access.
+
+## Error Hierarchy
+
+All errors extend from the base `LimrunError` class:
+
+```typescript
+export class LimrunError extends Error {}
+```
+
+The `APIError` class extends `LimrunError` and provides additional context:
+
+```typescript
+export class APIError<
+  TStatus extends number | undefined = number | undefined,
+  THeaders extends Headers | undefined = Headers | undefined,
+  TError extends Object | undefined = Object | undefined,
+> extends LimrunError {
+  /** HTTP status for the response that caused the error */
+  readonly status: TStatus;
+  /** HTTP headers for the response that caused the error */
+  readonly headers: THeaders;
+  /** JSON body of the response that caused the error */
+  readonly error: TError;
+}
+```
+
+## Error Types and Status Codes
+
+The SDK automatically maps HTTP status codes to specific error types:
+
+| Status Code | Error Type                 | Description                           |
+| ----------- | -------------------------- | ------------------------------------- |
+| 400         | `BadRequestError`          | Invalid request parameters            |
+| 401         | `AuthenticationError`      | Invalid or missing API key            |
+| 403         | `PermissionDeniedError`    | Insufficient permissions              |
+| 404         | `NotFoundError`            | Resource not found                    |
+| 409         | `ConflictError`            | Request conflicts with current state  |
+| 422         | `UnprocessableEntityError` | Validation error                      |
+| 429         | `RateLimitError`           | Too many requests                     |
+| >=500       | `InternalServerError`      | Server-side error                     |
+| N/A         | `APIConnectionError`       | Network connectivity problem          |
+| N/A         | `APIConnectionTimeoutError`| Request timed out                     |
+| N/A         | `APIUserAbortError`        | Request was aborted by user           |
+
+### Error Generation Logic
+
+The SDK uses the following logic to determine which error type to throw:
+
+```typescript
+// From core/error.ts:47-92
+static generate(
+  status: number | undefined,
+  errorResponse: Object | undefined,
+  message: string | undefined,
+  headers: Headers | undefined,
+): APIError {
+  if (!status || !headers) {
+    return new APIConnectionError({ message, cause: castToError(errorResponse) });
+  }
+
+  const error = errorResponse as Record<string, any>;
+
+  if (status === 400) {
+    return new BadRequestError(status, error, message, headers);
+  }
+
+  if (status === 401) {
+    return new AuthenticationError(status, error, message, headers);
+  }
+
+  if (status === 403) {
+    return new PermissionDeniedError(status, error, message, headers);
+  }
+
+  if (status === 404) {
+    return new NotFoundError(status, error, message, headers);
+  }
+
+  if (status === 409) {
+    return new ConflictError(status, error, message, headers);
+  }
+
+  if (status === 422) {
+    return new UnprocessableEntityError(status, error, message, headers);
+  }
+
+  if (status === 429) {
+    return new RateLimitError(status, error, message, headers);
+  }
+
+  if (status >= 500) {
+    return new InternalServerError(status, error, message, headers);
+  }
+
+  return new APIError(status, error, message, headers);
+}
+```
+
+## Basic Error Handling
+
+### Try-Catch Pattern
+
+The most common way to handle errors is using try-catch:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun();
+
+try {
+  const androidInstance = await client.androidInstances.create();
+  console.log(androidInstance.metadata);
+} catch (err) {
+  if (err instanceof Limrun.APIError) {
+    console.error('API error occurred:', err.message);
+    console.error('Status code:', err.status);
+    console.error('Response headers:', err.headers);
+    console.error('Error details:', err.error);
+  } else {
+    console.error('Unexpected error:', err);
+  }
+}
+```
+
+### Promise Catch
+
+You can also handle errors using promise `.catch()`:
+
+```typescript
+const androidInstance = await client.androidInstances.create().catch(async (err) => {
+  if (err instanceof Limrun.APIError) {
+    console.log(err.status);  // 400
+    console.log(err.name);    // BadRequestError
+    console.log(err.headers); // {server: 'nginx', ...}
+  } else {
+    throw err;
+  }
+});
+```
+
+## Specific Error Type Handling
+
+### Authentication Errors
+
+Handle authentication failures (401):
+
+```typescript
+try {
+  await client.androidInstances.create();
+} catch (err) {
+  if (err instanceof Limrun.AuthenticationError) {
+    console.error('Authentication failed. Please check your API key.');
+    // Redirect to login or refresh token
+  }
+}
+```
+
+### Rate Limit Errors
+
+Handle rate limiting (429):
+
+```typescript
+try {
+  await client.androidInstances.list();
+} catch (err) {
+  if (err instanceof Limrun.RateLimitError) {
+    console.error('Rate limit exceeded');
+    // The SDK will automatically retry, but you may want to
+    // implement additional backoff logic for your application
+  }
+}
+```
+
+### Validation Errors
+
+Handle validation errors (422):
+
+```typescript
+try {
+  await client.androidInstances.create(params);
+} catch (err) {
+  if (err instanceof Limrun.UnprocessableEntityError) {
+    console.error('Validation failed:', err.error);
+    // err.error contains detailed validation error information
+  }
+}
+```
+
+### Not Found Errors
+
+Handle missing resources (404):
+
+```typescript
+try {
+  const instance = await client.androidInstances.retrieve('instance-id');
+} catch (err) {
+  if (err instanceof Limrun.NotFoundError) {
+    console.error('Instance not found');
+    // Handle missing resource
+  }
+}
+```
+
+### Connection Errors
+
+Handle network connectivity issues:
+
+```typescript
+try {
+  await client.androidInstances.create();
+} catch (err) {
+  if (err instanceof Limrun.APIConnectionError) {
+    console.error('Network connection failed:', err.message);
+    // Retry manually or notify user of connectivity issues
+  }
+  if (err instanceof Limrun.APIConnectionTimeoutError) {
+    console.error('Request timed out');
+    // The SDK automatically retries timeouts, but you can handle it here
+  }
+}
+```
+
+### User Abort Errors
+
+Handle user-initiated cancellations:
+
+```typescript
+const controller = new AbortController();
+
+try {
+  await client.androidInstances.create({
+    signal: controller.signal,
+  });
+} catch (err) {
+  if (err instanceof Limrun.APIUserAbortError) {
+    console.log('Request was cancelled by user');
+  }
+}
+
+// Cancel the request
+controller.abort();
+```
+
+## Advanced Error Handling
+
+### Multiple Error Types
+
+Handle different error types with specific actions:
+
+```typescript
+try {
+  await client.androidInstances.create(params);
+} catch (err) {
+  if (err instanceof Limrun.AuthenticationError) {
+    // Redirect to login
+    redirectToLogin();
+  } else if (err instanceof Limrun.RateLimitError) {
+    // Show rate limit message
+    showRateLimitNotification();
+  } else if (err instanceof Limrun.UnprocessableEntityError) {
+    // Display validation errors
+    displayValidationErrors(err.error);
+  } else if (err instanceof Limrun.APIConnectionError) {
+    // Show offline mode
+    enableOfflineMode();
+  } else if (err instanceof Limrun.APIError) {
+    // Generic API error
+    console.error('API Error:', err.status, err.message);
+  } else {
+    // Unexpected error
+    console.error('Unexpected error:', err);
+    throw err;
+  }
+}
+```
+
+### Accessing Error Details
+
+All API errors provide access to the full response context:
+
+```typescript
+try {
+  await client.androidInstances.create();
+} catch (err) {
+  if (err instanceof Limrun.APIError) {
+    // HTTP status code
+    console.log('Status:', err.status);
+    
+    // Response headers
+    console.log('Headers:', err.headers);
+    
+    // Response body (if available)
+    console.log('Error body:', err.error);
+    
+    // Error message
+    console.log('Message:', err.message);
+  }
+}
+```
+
+## Automatic Retries
+
+Many errors are automatically retried by the SDK. See the [Retries and Timeouts](/core-concepts/retries-and-timeouts) guide for more information on configuring retry behavior.
+
+<Note>
+Errors like `RateLimitError`, `InternalServerError`, `ConflictError`, and `APIConnectionError` are automatically retried by default.
+</Note>

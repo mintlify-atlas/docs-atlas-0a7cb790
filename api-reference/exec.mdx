@@ -1,0 +1,273 @@
+---
+title: "Execute Commands"
+description: "Execute commands on limbuild server with streaming output"
+---
+
+## exec()
+
+Execute a command on the limbuild server. Returns a ChildProcess-like object with stdout/stderr streams.
+
+The interface is designed to be similar to Node.js's `child_process.spawn()` for familiarity and ease of extension.
+
+```typescript
+import { exec } from 'limrun';
+
+const proc = exec(
+  { command: 'xcodebuild' },
+  { apiUrl: '...', token: '...' }
+);
+
+// Stream output
+proc.stdout.on('data', (chunk) => console.log('[stdout]', chunk));
+proc.stderr.on('data', (chunk) => console.error('[stderr]', chunk));
+
+// Wait for completion
+const { exitCode, status } = await proc;
+```
+
+### Parameters
+
+<ParamField path="request" type="ExecRequest" required>
+  Command execution request
+  
+  <ParamField path="command" type="'xcodebuild'" required>
+    The command to execute. Currently only 'xcodebuild' is supported.
+  </ParamField>
+  
+  <ParamField path="xcodebuild" type="XcodeBuildConfig">
+    Configuration for xcodebuild command
+    
+    <ParamField path="workspace" type="string">
+      Path to .xcworkspace file
+    </ParamField>
+    
+    <ParamField path="project" type="string">
+      Path to .xcodeproj file
+    </ParamField>
+    
+    <ParamField path="scheme" type="string">
+      Scheme name to build
+    </ParamField>
+  </ParamField>
+</ParamField>
+
+<ParamField path="options" type="ExecOptions" required>
+  Execution options
+  
+  <ParamField path="apiUrl" type="string" required>
+    The API URL of the limbuild server
+  </ParamField>
+  
+  <ParamField path="token" type="string" required>
+    Auth token for the server
+  </ParamField>
+  
+  <ParamField path="log" type="(level: 'debug' | 'info' | 'warn' | 'error', msg: string) => void">
+    Custom logging function
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="process" type="ExecChildProcess">
+  A ChildProcess-like object with stdout/stderr streams. Implements PromiseLike so it can be awaited directly.
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+```typescript Stream-based (like Node.js spawn)
+const proc = exec({ command: 'xcodebuild' }, options);
+
+proc.stdout.on('data', (chunk) => process.stdout.write(chunk));
+proc.stderr.on('data', (chunk) => process.stderr.write(chunk));
+proc.on('exit', (code) => console.log(`Exited with code ${code}`));
+```
+
+```typescript Promise-based (awaitable)
+const proc = exec({ command: 'xcodebuild' }, options);
+const { exitCode, status } = await proc;
+
+console.log(`Build ${status} with exit code ${exitCode}`);
+```
+
+```typescript Kill Running Process
+const proc = exec({ command: 'xcodebuild' }, options);
+
+// Kill after 30 seconds
+setTimeout(() => {
+  proc.kill();
+}, 30000);
+
+try {
+  await proc;
+} catch (err) {
+  console.error('Build was cancelled');
+}
+```
+</CodeGroup>
+
+---
+
+## ExecChildProcess
+
+A ChildProcess-like object similar to Node.js's ChildProcess. Implements PromiseLike so it can be awaited directly.
+
+### Properties
+
+<ResponseField name="stdout" type="ReadableStream">
+  Stdout stream - emits 'data' and 'close' events
+  
+  ```typescript
+  proc.stdout.on('data', (chunk: string) => {
+    console.log(chunk);
+  });
+  
+  proc.stdout.on('close', () => {
+    console.log('stdout closed');
+  });
+  ```
+</ResponseField>
+
+<ResponseField name="stderr" type="ReadableStream">
+  Stderr stream - emits 'data' and 'close' events
+  
+  ```typescript
+  proc.stderr.on('data', (chunk: string) => {
+    console.error(chunk);
+  });
+  ```
+</ResponseField>
+
+<ResponseField name="execId" type="string | undefined">
+  The remote process/build identifier (similar to pid in Node.js)
+</ResponseField>
+
+### Methods
+
+#### on()
+
+Listen for process events.
+
+```typescript
+proc.on('exit', (code) => {
+  console.log(`Process exited with code ${code}`);
+});
+```
+
+<ParamField path="event" type="'exit'" required>
+  Event name to listen for
+</ParamField>
+
+<ParamField path="listener" type="(code: number) => void" required>
+  Event handler function
+</ParamField>
+
+#### kill()
+
+Send a signal to terminate the process.
+
+```typescript
+await proc.kill();
+```
+
+<ResponseField name="result" type="Promise<void>">
+  Promise that resolves when the kill signal has been sent
+</ResponseField>
+
+#### then()
+
+Promise interface for awaiting the process result.
+
+```typescript
+const { exitCode, status } = await proc;
+```
+
+<ResponseField name="result" type="Promise<ExecResult>">
+  Promise that resolves with the execution result
+</ResponseField>
+
+---
+
+## ReadableStream
+
+A Readable-like stream interface, similar to Node.js stream.Readable. Emits 'data' for each chunk and 'close' when the stream ends.
+
+### Methods
+
+#### on()
+
+Attach event listeners to the stream.
+
+```typescript
+proc.stdout.on('data', (chunk) => console.log(chunk));
+proc.stdout.on('close', () => console.log('Stream closed'));
+```
+
+<ParamField path="event" type="'data' | 'close'" required>
+  Event name
+</ParamField>
+
+<ParamField path="listener" type="DataListener | CloseListener" required>
+  Event handler function
+  - For 'data' events: `(chunk: string) => void`
+  - For 'close' events: `() => void`
+</ParamField>
+
+---
+
+## Types
+
+### ExecRequest
+
+```typescript
+type ExecRequest = {
+  command: 'xcodebuild';
+  xcodebuild?: {
+    workspace?: string;
+    project?: string;
+    scheme?: string;
+  };
+};
+```
+
+Request object for executing a command.
+
+### ExecOptions
+
+```typescript
+type ExecOptions = {
+  apiUrl: string;
+  token: string;
+  log?: (level: 'debug' | 'info' | 'warn' | 'error', msg: string) => void;
+};
+```
+
+Options for command execution.
+
+### ExecResult
+
+```typescript
+type ExecResult = {
+  exitCode: number;
+  execId: string;
+  status: 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
+};
+```
+
+Result of command execution.
+
+<ResponseField name="exitCode" type="number">
+  The exit code of the command (0 for success, non-zero for failure)
+</ResponseField>
+
+<ResponseField name="execId" type="string">
+  The remote execution identifier
+</ResponseField>
+
+<ResponseField name="status" type="'SUCCEEDED' | 'FAILED' | 'CANCELLED'">
+  The execution status
+  - `SUCCEEDED`: exitCode === 0
+  - `FAILED`: exitCode !== 0 and exitCode !== -1
+  - `CANCELLED`: exitCode === -1 (killed)
+</ResponseField>

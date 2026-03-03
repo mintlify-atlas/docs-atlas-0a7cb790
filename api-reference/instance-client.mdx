@@ -1,0 +1,238 @@
+---
+title: Instance Client
+description: API reference for the Limrun instance client
+---
+
+The Instance Client provides methods to connect to and interact with Limrun Android instances.
+
+## createInstanceClient
+
+Creates a client for interacting with a Limrun Android instance.
+
+```typescript
+import { createInstanceClient } from '@limrun/client';
+
+const client = await createInstanceClient({
+  adbUrl: 'wss://instance.limrun.com/adb',
+  endpointUrl: 'wss://instance.limrun.com/endpoint',
+  token: 'your-token',
+  logLevel: 'info'
+});
+```
+
+### Parameters
+
+<ParamField path="options" type="InstanceClientOptions" required>
+  Configuration options for the instance client
+
+  <Expandable title="InstanceClientOptions properties">
+    <ParamField path="adbUrl" type="string" required>
+      The URL of the ADB WebSocket endpoint
+    </ParamField>
+
+    <ParamField path="endpointUrl" type="string" required>
+      The URL of the main endpoint WebSocket
+    </ParamField>
+
+    <ParamField path="token" type="string" required>
+      The token to use for the WebSocket connections
+    </ParamField>
+
+    <ParamField path="adbPath" type="string" default="adb">
+      Path to the ADB executable
+    </ParamField>
+
+    <ParamField path="logLevel" type="LogLevel" default="info">
+      Controls logging verbosity. One of: `'none'`, `'error'`, `'warn'`, `'info'`, `'debug'`
+    </ParamField>
+
+    <ParamField path="maxReconnectAttempts" type="number" default={6}>
+      Maximum number of reconnection attempts
+    </ParamField>
+
+    <ParamField path="reconnectDelay" type="number" default={1000}>
+      Initial reconnection delay in milliseconds
+    </ParamField>
+
+    <ParamField path="maxReconnectDelay" type="number" default={30000}>
+      Maximum reconnection delay in milliseconds
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+<ResponseField name="client" type="Promise<InstanceClient>">
+  A promise that resolves to an InstanceClient instance
+</ResponseField>
+
+## InstanceClient
+
+The client interface for interacting with a Limrun instance.
+
+### Methods
+
+#### screenshot
+
+Take a screenshot of the current screen.
+
+```typescript
+const screenshot = await client.screenshot();
+console.log(screenshot.dataUri); // data:image/png;base64,...
+```
+
+<ResponseField name="screenshot" type="Promise<ScreenshotData>">
+  Returns a promise that resolves to screenshot data
+
+  <Expandable title="ScreenshotData properties">
+    <ResponseField name="dataUri" type="string">
+      Data URI containing the screenshot image (e.g., `data:image/png;base64,...`)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### startAdbTunnel
+
+Establish an ADB tunnel to the instance. Returns the local TCP port and a cleanup function.
+
+```typescript
+const tunnel = await client.startAdbTunnel();
+console.log(`ADB connected on ${tunnel.address.address}:${tunnel.address.port}`);
+
+// When done, close the tunnel
+tunnel.close();
+```
+
+<ResponseField name="tunnel" type="Promise<Tunnel>">
+  Returns a promise that resolves to a Tunnel object
+
+  <Expandable title="Tunnel properties">
+    <ResponseField name="address" type="{ address: string, port: number }">
+      The local address and port for the ADB connection
+    </ResponseField>
+
+    <ResponseField name="close" type="() => void">
+      Function to close the tunnel and cleanup resources
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### sendAsset
+
+Send an asset URL to the instance. The instance will download the asset and process it (currently APK install is supported).
+
+```typescript
+await client.sendAsset('https://example.com/app.apk');
+console.log('APK installation started');
+```
+
+<ParamField path="url" type="string" required>
+  URL of the asset to send (e.g., APK file)
+</ParamField>
+
+<ResponseField name="result" type="Promise<void>">
+  Resolves on success, rejects with an Error on failure
+</ResponseField>
+
+#### disconnect
+
+Disconnect from the Limrun instance.
+
+```typescript
+client.disconnect();
+```
+
+#### getConnectionState
+
+Get the current connection state.
+
+```typescript
+const state = client.getConnectionState();
+console.log(state); // 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
+```
+
+<ResponseField name="state" type="ConnectionState">
+  One of: `'connecting'`, `'connected'`, `'disconnected'`, `'reconnecting'`
+</ResponseField>
+
+#### onConnectionStateChange
+
+Register a callback for connection state changes.
+
+```typescript
+const unsubscribe = client.onConnectionStateChange((state) => {
+  console.log('Connection state changed:', state);
+});
+
+// Later, to unregister:
+unsubscribe();
+```
+
+<ParamField path="callback" type="ConnectionStateCallback" required>
+  Callback function that receives the new connection state
+</ParamField>
+
+<ResponseField name="unsubscribe" type="() => void">
+  Function to unregister the callback
+</ResponseField>
+
+## Types
+
+### ConnectionState
+
+```typescript
+type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
+```
+
+Represents the current connection state of the instance client.
+
+### ConnectionStateCallback
+
+```typescript
+type ConnectionStateCallback = (state: ConnectionState) => void;
+```
+
+Callback function for connection state changes.
+
+### LogLevel
+
+```typescript
+type LogLevel = 'none' | 'error' | 'warn' | 'info' | 'debug';
+```
+
+Controls the verbosity of logging in the client.
+
+## Example Usage
+
+```typescript
+import { createInstanceClient } from '@limrun/client';
+
+// Create the client
+const client = await createInstanceClient({
+  adbUrl: 'wss://instance.limrun.com/adb',
+  endpointUrl: 'wss://instance.limrun.com/endpoint',
+  token: 'your-token',
+  logLevel: 'info'
+});
+
+// Monitor connection state
+client.onConnectionStateChange((state) => {
+  console.log('Connection state:', state);
+});
+
+// Take a screenshot
+const screenshot = await client.screenshot();
+console.log('Screenshot captured:', screenshot.dataUri);
+
+// Start ADB tunnel
+const tunnel = await client.startAdbTunnel();
+console.log(`ADB available at ${tunnel.address.address}:${tunnel.address.port}`);
+
+// Install an APK
+await client.sendAsset('https://example.com/app.apk');
+console.log('APK installed');
+
+// Cleanup
+tunnel.close();
+client.disconnect();
+```

@@ -1,0 +1,408 @@
+---
+title: 'Limrun Client'
+description: 'Main client class for interacting with the Limrun API'
+---
+
+## Overview
+
+The `Limrun` class is the primary entry point for interacting with the Limrun API. It provides access to all resource endpoints and handles authentication, retries, timeouts, and logging.
+
+## Constructor
+
+Create a new Limrun client instance.
+
+```typescript
+import Limrun from 'limrun';
+
+const client = new Limrun({
+  apiKey: 'your-api-key',
+  baseURL: 'https://api.limrun.com',
+  timeout: 60000,
+  maxRetries: 2,
+});
+```
+
+### Parameters
+
+<ParamField path="options" type="ClientOptions" optional>
+  Configuration options for the client. See [Client Options](/api-reference/client-options) for detailed information.
+</ParamField>
+
+## Properties
+
+### Resource Properties
+
+The Limrun client exposes the following resource properties for accessing API endpoints:
+
+<ResponseField name="androidInstances" type="AndroidInstances">
+  Access Android instance operations. See [Android Instances](/api-reference/android-instances) for available methods.
+  
+  ```typescript
+  const instance = await client.androidInstances.create({
+    spec: {
+      region: 'us-west-2',
+      inactivityTimeout: '10m',
+    },
+  });
+  ```
+</ResponseField>
+
+<ResponseField name="iosInstances" type="IosInstances">
+  Access iOS instance operations. See [iOS Instances](/api-reference/ios-instances) for available methods.
+  
+  ```typescript
+  const instance = await client.iosInstances.create({
+    spec: {
+      region: 'us-west-2',
+      inactivityTimeout: '10m',
+    },
+  });
+  ```
+</ResponseField>
+
+<ResponseField name="assets" type="Assets">
+  Access asset management operations. See [Assets](/api-reference/assets) for available methods.
+  
+  ```typescript
+  const asset = await client.assets.getOrUpload({
+    path: './my-app.apk',
+  });
+  ```
+</ResponseField>
+
+### Configuration Properties
+
+<ResponseField name="apiKey" type="string | null">
+  The API key used for authentication. Can be `null` if using custom authentication headers.
+</ResponseField>
+
+<ResponseField name="baseURL" type="string">
+  The base URL for API requests. Defaults to `https://api.limrun.com`.
+</ResponseField>
+
+<ResponseField name="maxRetries" type="number">
+  Maximum number of retry attempts for failed requests. Defaults to `2`.
+</ResponseField>
+
+<ResponseField name="timeout" type="number">
+  Request timeout in milliseconds. Defaults to `300000` (5 minutes).
+</ResponseField>
+
+<ResponseField name="logger" type="Logger">
+  The logger instance used for logging. Defaults to `console`.
+</ResponseField>
+
+<ResponseField name="logLevel" type="LogLevel | undefined">
+  The current log level. Can be `'debug'`, `'info'`, `'warn'`, or `'error'`.
+</ResponseField>
+
+<ResponseField name="fetchOptions" type="RequestInit | undefined">
+  Additional fetch options passed to all requests.
+</ResponseField>
+
+## HTTP Methods
+
+The Limrun client provides low-level HTTP methods for making custom API requests. These methods are primarily used internally by resource classes but can be used directly for custom integrations.
+
+### get()
+
+Make a GET request.
+
+```typescript
+get<Rsp>(path: string, opts?: RequestOptions): APIPromise<Rsp>
+```
+
+<ParamField path="path" type="string" required>
+  The API endpoint path (e.g., `/v1/android_instances`).
+</ParamField>
+
+<ParamField path="opts" type="RequestOptions" optional>
+  Additional request options including query parameters, headers, and timeout overrides.
+</ParamField>
+
+**Example:**
+
+```typescript
+const response = await client.get('/v1/android_instances/123');
+```
+
+### post()
+
+Make a POST request.
+
+```typescript
+post<Rsp>(path: string, opts?: RequestOptions): APIPromise<Rsp>
+```
+
+<ParamField path="path" type="string" required>
+  The API endpoint path.
+</ParamField>
+
+<ParamField path="opts" type="RequestOptions" optional>
+  Request options including body, query parameters, and headers.
+</ParamField>
+
+**Example:**
+
+```typescript
+const response = await client.post('/v1/android_instances', {
+  body: {
+    spec: {
+      region: 'us-west-2',
+      inactivityTimeout: '10m',
+    },
+  },
+});
+```
+
+### patch()
+
+Make a PATCH request.
+
+```typescript
+patch<Rsp>(path: string, opts?: RequestOptions): APIPromise<Rsp>
+```
+
+<ParamField path="path" type="string" required>
+  The API endpoint path.
+</ParamField>
+
+<ParamField path="opts" type="RequestOptions" optional>
+  Request options including body, query parameters, and headers.
+</ParamField>
+
+### put()
+
+Make a PUT request.
+
+```typescript
+put<Rsp>(path: string, opts?: RequestOptions): APIPromise<Rsp>
+```
+
+<ParamField path="path" type="string" required>
+  The API endpoint path.
+</ParamField>
+
+<ParamField path="opts" type="RequestOptions" optional>
+  Request options including body, query parameters, and headers.
+</ParamField>
+
+### delete()
+
+Make a DELETE request.
+
+```typescript
+delete<Rsp>(path: string, opts?: RequestOptions): APIPromise<Rsp>
+```
+
+<ParamField path="path" type="string" required>
+  The API endpoint path.
+</ParamField>
+
+<ParamField path="opts" type="RequestOptions" optional>
+  Request options including query parameters and headers.
+</ParamField>
+
+**Example:**
+
+```typescript
+await client.delete('/v1/android_instances/123');
+```
+
+## Instance Methods
+
+### withOptions()
+
+Create a new client instance with modified options, inheriting all settings from the current client.
+
+```typescript
+withOptions(options: Partial<ClientOptions>): Limrun
+```
+
+<ParamField path="options" type="Partial<ClientOptions>" required>
+  Options to override in the new client instance.
+</ParamField>
+
+**Returns:** A new `Limrun` instance with the specified options.
+
+**Example:**
+
+```typescript
+// Create a new client with a different timeout
+const clientWithTimeout = client.withOptions({
+  timeout: 120000, // 2 minutes
+});
+
+// Create a new client for a different region
+const euClient = client.withOptions({
+  baseURL: 'https://eu.api.limrun.com',
+});
+```
+
+## Static Properties
+
+### Error Classes
+
+The Limrun class exposes error classes as static properties:
+
+<ResponseField name="Limrun.LimrunError" type="class">
+  Base error class for all Limrun SDK errors.
+</ResponseField>
+
+<ResponseField name="Limrun.APIError" type="class">
+  Error thrown when the API returns an error response.
+</ResponseField>
+
+<ResponseField name="Limrun.APIConnectionError" type="class">
+  Error thrown when a connection to the API fails.
+</ResponseField>
+
+<ResponseField name="Limrun.APIConnectionTimeoutError" type="class">
+  Error thrown when a request times out.
+</ResponseField>
+
+<ResponseField name="Limrun.APIUserAbortError" type="class">
+  Error thrown when a request is aborted by the user.
+</ResponseField>
+
+<ResponseField name="Limrun.NotFoundError" type="class">
+  Error thrown for 404 responses.
+</ResponseField>
+
+<ResponseField name="Limrun.ConflictError" type="class">
+  Error thrown for 409 conflict responses.
+</ResponseField>
+
+<ResponseField name="Limrun.RateLimitError" type="class">
+  Error thrown when rate limits are exceeded.
+</ResponseField>
+
+<ResponseField name="Limrun.BadRequestError" type="class">
+  Error thrown for 400 bad request responses.
+</ResponseField>
+
+<ResponseField name="Limrun.AuthenticationError" type="class">
+  Error thrown for authentication failures.
+</ResponseField>
+
+<ResponseField name="Limrun.InternalServerError" type="class">
+  Error thrown for 500 internal server errors.
+</ResponseField>
+
+<ResponseField name="Limrun.PermissionDeniedError" type="class">
+  Error thrown for 403 permission denied responses.
+</ResponseField>
+
+<ResponseField name="Limrun.UnprocessableEntityError" type="class">
+  Error thrown for 422 unprocessable entity responses.
+</ResponseField>
+
+### Utility Methods
+
+<ResponseField name="Limrun.toFile" type="function">
+  Utility function for creating file uploads. See [Uploads](/api-reference/types#uploads) for details.
+</ResponseField>
+
+### Constants
+
+<ResponseField name="Limrun.DEFAULT_TIMEOUT" type="number">
+  Default timeout value in milliseconds. Set to `300000` (5 minutes).
+</ResponseField>
+
+## Usage Examples
+
+### Basic Initialization
+
+```typescript
+import Limrun from 'limrun';
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+});
+```
+
+### With Environment Variables
+
+```typescript
+import Limrun from 'limrun';
+
+// Automatically reads from LIM_API_KEY and LIMRUN_BASE_URL environment variables
+const client = new Limrun();
+```
+
+### Custom Configuration
+
+```typescript
+import Limrun from 'limrun';
+
+const client = new Limrun({
+  apiKey: 'your-api-key',
+  baseURL: 'https://api.limrun.com',
+  timeout: 60000,
+  maxRetries: 3,
+  logLevel: 'debug',
+  fetchOptions: {
+    headers: {
+      'X-Custom-Header': 'value',
+    },
+  },
+});
+```
+
+### Error Handling
+
+```typescript
+import Limrun from 'limrun';
+
+const client = new Limrun();
+
+try {
+  const instance = await client.androidInstances.create({
+    spec: {
+      region: 'us-west-2',
+      inactivityTimeout: '10m',
+    },
+  });
+  console.log('Instance created:', instance.metadata.id);
+} catch (error) {
+  if (error instanceof Limrun.AuthenticationError) {
+    console.error('Authentication failed - check your API key');
+  } else if (error instanceof Limrun.RateLimitError) {
+    console.error('Rate limit exceeded - please retry later');
+  } else if (error instanceof Limrun.APIConnectionTimeoutError) {
+    console.error('Request timed out');
+  } else {
+    console.error('An error occurred:', error);
+  }
+}
+```
+
+### Using Multiple Clients
+
+```typescript
+import Limrun from 'limrun';
+
+// Production client
+const prodClient = new Limrun({
+  apiKey: process.env.PROD_API_KEY,
+  baseURL: 'https://api.limrun.com',
+});
+
+// Staging client
+const stagingClient = new Limrun({
+  apiKey: process.env.STAGING_API_KEY,
+  baseURL: 'https://staging.api.limrun.com',
+});
+
+// Use the appropriate client
+const instance = await prodClient.androidInstances.create({
+  spec: { region: 'us-west-2', inactivityTimeout: '10m' },
+});
+```
+
+## See Also
+
+- [Client Options](/api-reference/client-options) - Detailed configuration options
+- [Error Handling](/core-concepts/error-handling) - Comprehensive error handling guide
+- [Authentication](/core-concepts/authentication) - Authentication setup
+- [Retries & Timeouts](/core-concepts/retries-and-timeouts) - Configuring retry behavior

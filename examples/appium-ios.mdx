@@ -1,0 +1,251 @@
+---
+title: Appium iOS Automation
+description: Automate iOS simulators using Appium from any platform, including Linux CI runners
+---
+
+This example demonstrates how to automate iOS instances using Appium, including both native app actions and Safari browser automation. Remarkably, you can drive iOS simulators from a Linux GitHub Actions runner - a first in the ecosystem!
+
+## What This Example Does
+
+1. Creates an iOS instance with WebDriverAgent pre-installed
+2. Connects Appium to the remote iOS simulator
+3. Opens Safari and navigates to Hacker News
+4. Switches to WebView context for web automation
+5. Scrolls the page and clicks the "More" link
+
+## Prerequisites
+
+### Install Appium
+
+```bash
+npm i --location=global appium
+```
+
+### Install Limrun's Custom XCUITest Driver
+
+Appium iOS testing requires WebDriverAgent and a driver to communicate with it. Limrun provides a custom driver that forwards simulator commands to remote iOS instances:
+
+```bash
+appium driver install --source npm @limrun/appium-xcuitest-driver@10.14.6-lim.2
+```
+
+<Note>
+  The upstream `appium-xcuitest-driver` assumes the iOS simulator runs locally. Limrun's fork forwards `xcrun simctl` calls, file uploads, and Safari debugging tunnels to remote instances.
+</Note>
+
+### Start Appium Server
+
+In a separate terminal:
+
+```bash
+appium
+```
+
+### Set API Key
+
+```bash
+export LIM_API_KEY=lim_...
+```
+
+## Running the Example
+
+```bash
+cd examples/appium-ios
+yarn install
+yarn run start
+```
+
+You'll see it navigate to Hacker News and browse it automatically!
+
+## Complete Example Code
+
+```typescript
+import { Limrun, Ios } from '@limrun/api';
+import { remote } from 'webdriverio';
+
+const apiKey = process.env['LIM_API_KEY'];
+
+if (!apiKey) {
+  console.error('Error: Missing required environment variables (LIM_API_KEY).');
+  process.exit(1);
+}
+
+const limrun = new Limrun({ apiKey });
+
+// Create iOS instance with WebDriverAgent pre-installed
+console.time('create');
+const instance = await limrun.iosInstances.create({
+  wait: true,
+  reuseIfExists: true,
+  metadata: {
+    labels: {
+      name: 'appium-ios-example',
+    },
+  },
+  spec: {
+    initialAssets: [
+      {
+        kind: 'App',
+        source: 'URL',
+        url: 'https://github.com/appium/WebDriverAgent/releases/download/v10.4.5/WebDriverAgentRunner-Build-Sim-arm64.zip',
+        launchMode: 'ForegroundIfRunning',
+      },
+    ],
+  },
+});
+console.timeEnd('create');
+
+if (!instance.status.targetHttpPortUrlPrefix) {
+  throw new Error('Target HTTP Port URL Prefix is missing');
+}
+if (!instance.status.apiUrl) {
+  throw new Error('API URL is missing');
+}
+
+// WebDriverAgent listens on port 8100 by default
+const wdaUrl = instance.status.targetHttpPortUrlPrefix.replace('limrun.net', 'limrun.net:443') + '8100';
+
+// Ensure WDA is running before the test starts
+let wdaRunning = true;
+try {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 3000);
+  await fetch(wdaUrl + '/status', {
+    headers: {
+      Authorization: `Bearer ${instance.status.token}`,
+    },
+    signal: controller.signal,
+  });
+} catch (_) {
+  wdaRunning = false;
+}
+
+if (!wdaRunning) {
+  console.log('WDA is not running, launching it...');
+  const lim = await Ios.createInstanceClient({
+    apiUrl: instance.status.apiUrl,
+    token: instance.status.token,
+  });
+  await lim.simctl(['launch', 'booted', 'com.facebook.WebDriverAgentRunner.xctrunner']).wait();
+  lim.disconnect();
+  console.log('WDA launched');
+}
+
+// Connect Appium to the remote iOS instance
+const driver = await remote({
+  capabilities: {
+    platformName: 'iOS',
+    browserName: 'safari',
+    'appium:automationName': 'XCUITest',
+    'appium:noReset': true,
+    'appium:fullReset': false,
+    'appium:webDriverAgentUrl': wdaUrl,
+    'appium:wdaLocalPort': 443,
+    'appium:useNewWDA': false,
+    'appium:usePreinstalledWDA': true,
+    // Limrun-specific capabilities
+    'appium:limInstanceApiUrl': instance.status.apiUrl,
+    'appium:limInstanceToken': instance.status.token,
+    'appium:wdaRequestHeaders': {
+      Authorization: `Bearer ${instance.status.token}`,
+    },
+  },
+  hostname: '127.0.0.1',
+  port: 4723,
+  path: '/',
+  protocol: 'http',
+});
+console.log('Appium successfully connected to the Limrun iOS instance');
+
+// Navigate to Hacker News
+await driver.url('https://news.ycombinator.com');
+console.log('Navigated to Hacker News');
+
+// Switch to WebView context for web automation
+const contexts = await driver.getContexts();
+console.log('Available contexts:', contexts);
+const webviewContext = contexts.find((ctx) => String(ctx).includes('WEBVIEW'));
+if (!webviewContext) {
+  throw new Error('WEBVIEW context not found');
+}
+await driver.switchContext(webviewContext as string);
+console.log('Switched to WEBVIEW context');
+await driver.pause(1_000);
+
+// Scroll to bottom and click More link
+await driver.execute('window.scrollTo(0, document.body.scrollHeight)');
+console.log('Scrolled to the bottom');
+
+console.time('click.morelink');
+await driver.$('a.morelink').click();
+console.timeEnd('click.morelink');
+
+console.time('getPageSource');
+await driver.getPageSource();
+console.timeEnd('getPageSource');
+console.log('Done');
+
+await driver.deleteSession();
+```
+
+## How It Works
+
+### Instance Creation
+
+The example creates an iOS instance with WebDriverAgent pre-installed using the `initialAssets` parameter. The `launchMode: 'ForegroundIfRunning'` ensures WDA is automatically launched.
+
+### Port Mapping
+
+The `targetHttpPortUrlPrefix` allows appending any port number to connect to services running inside the simulator. WDA listens on port 8100.
+
+### WebDriverAgent Setup
+
+Before starting the test, the code checks if WDA is running and launches it if needed using the `simctl` command through the instance client.
+
+### Appium Connection
+
+The custom Appium capabilities tell the driver how to connect to the remote instance:
+
+- `limInstanceApiUrl` - Instance WebSocket API URL
+- `limInstanceToken` - Authentication token
+- `wdaRequestHeaders` - Authorization header for WDA requests
+
+### Safari Automation
+
+After connecting, the code:
+
+1. Opens Safari at the specified URL
+2. Gets available contexts (NATIVE_APP and WEBVIEW)
+3. Switches to WEBVIEW context for web element interaction
+4. Uses standard WebDriver commands (execute, $, click)
+
+## Why a Custom XCUITest Driver?
+
+The upstream `appium-xcuitest-driver` assumes local simulator access. Limrun's fork includes:
+
+- **Simulator management**: Forwards `xcrun simctl` calls to remote macOS hosts
+- **File operations**: Uploads files through Limrun API instead of local filesystem
+- **Safari debugging**: Creates tunnels to expose UNIX sockets over TCP
+
+<Note>
+  Your test code is **not affected** - the same code works with both local and remote iOS simulators.
+</Note>
+
+## Use Cases
+
+- Run iOS tests on Linux CI runners (GitHub Actions, GitLab CI, etc.)
+- Parallel iOS testing without managing Mac infrastructure
+- Cross-platform test development (write tests on Windows/Linux)
+- Automated Safari browser testing
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="iOS Instances" icon="mobile" href="/api-reference/ios-instances">
+    Learn about iOS instance management
+  </Card>
+  
+  <Card title="Assets" icon="box" href="/api-reference/assets">
+    Understand how to manage app installations
+  </Card>
+</CardGroup>

@@ -1,0 +1,365 @@
+---
+title: 'Pagination'
+description: 'Efficiently iterate through large result sets with auto-pagination'
+---
+
+## Overview
+
+List methods in the Limrun API return paginated results. The SDK provides both automatic pagination with `for await...of` and manual pagination for more control.
+
+## Auto-Pagination
+
+The recommended way to iterate through all items:
+
+### Android Instances
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+});
+
+const allInstances = [];
+
+// Automatically fetches more pages as needed
+for await (const instance of client.androidInstances.list()) {
+  allInstances.push(instance);
+  console.log('Instance:', instance.metadata.id);
+}
+
+console.log('Total instances:', allInstances.length);
+```
+
+### iOS Instances
+
+```typescript
+for await (const instance of client.iosInstances.list()) {
+  console.log('iOS Instance:', instance.metadata.id);
+  console.log('State:', instance.status.state);
+}
+```
+
+### With Filters
+
+```typescript
+// Only iterate through ready instances
+for await (const instance of client.androidInstances.list({
+  state: 'ready',
+})) {
+  console.log('Ready instance:', instance.metadata.id);
+}
+```
+
+## Manual Pagination
+
+For more control over pagination:
+
+<Steps>
+  <Step title="Get First Page">
+    ```typescript
+    let page = await client.androidInstances.list();
+
+    for (const instance of page.items) {
+      console.log(instance.metadata.id);
+    }
+    ```
+  </Step>
+
+  <Step title="Check for More Pages">
+    ```typescript
+    if (page.hasNextPage()) {
+      console.log('More pages available');
+    }
+    ```
+  </Step>
+
+  <Step title="Get Next Page">
+    ```typescript
+    while (page.hasNextPage()) {
+      page = await page.getNextPage();
+      
+      for (const instance of page.items) {
+        console.log(instance.metadata.id);
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Complete Manual Pagination Example
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+});
+
+const allInstances = [];
+let page = await client.androidInstances.list();
+
+do {
+  console.log(`Processing page with ${page.items.length} items`);
+  
+  for (const instance of page.items) {
+    allInstances.push(instance);
+  }
+  
+  if (page.hasNextPage()) {
+    page = await page.getNextPage();
+  } else {
+    break;
+  }
+} while (true);
+
+console.log('Total instances:', allInstances.length);
+```
+
+## Pagination with Limits
+
+Control the number of items per page:
+
+### Assets
+
+```typescript
+const assets = await client.assets.list({
+  limit: 10, // Get only 10 items
+});
+
+console.log('First 10 assets:', assets.length);
+```
+
+### Paginate Through Limited Results
+
+```typescript
+let page = await client.androidInstances.list({
+  limit: 5, // 5 items per page
+});
+
+let pageNumber = 1;
+
+do {
+  console.log(`Page ${pageNumber}:`);
+  
+  for (const instance of page.items) {
+    console.log('-', instance.metadata.id);
+  }
+  
+  if (page.hasNextPage()) {
+    page = await page.getNextPage();
+    pageNumber++;
+  } else {
+    break;
+  }
+} while (true);
+```
+
+## Pagination Properties
+
+Page objects include pagination metadata:
+
+```typescript
+const page = await client.androidInstances.list();
+
+console.log('Items in page:', page.items.length);
+console.log('Has next page:', page.hasNextPage());
+```
+
+## Early Termination
+
+Stop iteration early when you find what you need:
+
+### With Auto-Pagination
+
+```typescript
+for await (const instance of client.androidInstances.list()) {
+  if (instance.metadata.displayName === 'Target Instance') {
+    console.log('Found it:', instance.metadata.id);
+    break; // Stop iterating
+  }
+}
+```
+
+### With Manual Pagination
+
+```typescript
+let page = await client.androidInstances.list();
+let found = false;
+
+while (!found && page) {
+  for (const instance of page.items) {
+    if (instance.metadata.displayName === 'Target Instance') {
+      console.log('Found it:', instance.metadata.id);
+      found = true;
+      break;
+    }
+  }
+  
+  if (!found && page.hasNextPage()) {
+    page = await page.getNextPage();
+  } else {
+    break;
+  }
+}
+```
+
+## Efficient Filtering
+
+Combine server-side and client-side filtering:
+
+```typescript
+// Server-side filter (reduces data transfer)
+for await (const instance of client.androidInstances.list({
+  state: 'ready',
+  region: 'us-west',
+})) {
+  // Client-side filter (more complex logic)
+  if (instance.metadata.labels?.env === 'production' &&
+      instance.metadata.createdAt > someTimestamp) {
+    console.log('Matched instance:', instance.metadata.id);
+  }
+}
+```
+
+## Processing in Batches
+
+Process items in batches for better performance:
+
+```typescript
+const BATCH_SIZE = 10;
+let batch = [];
+
+for await (const instance of client.androidInstances.list()) {
+  batch.push(instance);
+  
+  if (batch.length >= BATCH_SIZE) {
+    // Process batch
+    await processBatch(batch);
+    batch = [];
+  }
+}
+
+// Process remaining items
+if (batch.length > 0) {
+  await processBatch(batch);
+}
+
+async function processBatch(instances) {
+  console.log('Processing batch of', instances.length, 'instances');
+  // Your batch processing logic
+}
+```
+
+## Pagination Best Practices
+
+### Use Auto-Pagination for Most Cases
+
+```typescript
+// Preferred: Simple and efficient
+for await (const instance of client.androidInstances.list()) {
+  console.log(instance.metadata.id);
+}
+```
+
+### Use Manual Pagination for Progress Tracking
+
+```typescript
+let page = await client.androidInstances.list();
+let pageNum = 1;
+let totalProcessed = 0;
+
+do {
+  console.log(`Processing page ${pageNum} (${page.items.length} items)`);
+  
+  for (const instance of page.items) {
+    // Process instance
+    totalProcessed++;
+  }
+  
+  console.log(`Progress: ${totalProcessed} instances processed`);
+  
+  if (page.hasNextPage()) {
+    page = await page.getNextPage();
+    pageNum++;
+  } else {
+    break;
+  }
+} while (true);
+```
+
+### Combine with Error Handling
+
+```typescript
+let pageNum = 1;
+let page = await client.androidInstances.list();
+
+do {
+  try {
+    console.log(`Processing page ${pageNum}`);
+    
+    for (const instance of page.items) {
+      try {
+        // Process instance
+        await processInstance(instance);
+      } catch (err) {
+        console.error(`Failed to process ${instance.metadata.id}:`, err);
+        // Continue to next instance
+      }
+    }
+    
+    if (page.hasNextPage()) {
+      page = await page.getNextPage();
+      pageNum++;
+    } else {
+      break;
+    }
+  } catch (err) {
+    console.error(`Failed to fetch page ${pageNum}:`, err);
+    break;
+  }
+} while (true);
+```
+
+## Asset Pagination
+
+Assets use a simpler pagination model:
+
+```typescript
+const assets = await client.assets.list({
+  limit: 50, // Default is 50
+  nameFilter: 'my-app',
+});
+
+console.log('Assets:', assets.length);
+
+for (const asset of assets) {
+  console.log(asset.name, asset.id);
+}
+```
+
+<Note>
+  The `assets.list()` method returns an array, not a pageable object. Use the `limit` parameter to control the maximum number of results.
+</Note>
+
+## Performance Considerations
+
+### Auto-Pagination
+
+- Fetches next page automatically when you iterate past the current page
+- Minimal memory overhead (doesn't load all pages at once)
+- Ideal for processing large datasets
+
+### Manual Pagination
+
+- Explicit control over when to fetch next page
+- Better for progress tracking and error recovery
+- Allows implementing custom backoff/retry logic
+
+<Tip>
+  Use `for await...of` for simple iteration. Use manual pagination when you need progress tracking or custom error handling.
+</Tip>
+
+<Warning>
+  Avoid collecting all items into an array with auto-pagination if the result set is very large. Process items as you iterate instead.
+</Warning>

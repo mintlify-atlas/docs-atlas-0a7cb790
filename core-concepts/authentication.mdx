@@ -1,0 +1,171 @@
+---
+title: 'Authentication'
+description: 'Learn how to authenticate your Limrun API requests'
+---
+
+## Overview
+
+The Limrun SDK uses API key authentication to secure access to the API. You can authenticate requests by providing your API key when initializing the client.
+
+## API Key
+
+Authentication is handled through the `apiKey` option in the `ClientOptions` interface:
+
+```typescript
+export interface ClientOptions {
+  /**
+   * Defaults to process.env['LIM_API_KEY'].
+   */
+  apiKey?: string | null | undefined;
+  // ... other options
+}
+```
+
+The SDK automatically looks for the `LIM_API_KEY` environment variable. If found, it will be used as the default API key.
+
+## Authentication Methods
+
+### Using Environment Variables
+
+The simplest way to authenticate is by setting the `LIM_API_KEY` environment variable:
+
+```bash
+export LIM_API_KEY='your-api-key-here'
+```
+
+Then initialize the client without explicitly passing the API key:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun();
+// The API key is automatically read from process.env['LIM_API_KEY']
+```
+
+### Explicit API Key
+
+You can also provide the API key directly when creating the client:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  apiKey: 'your-api-key-here',
+});
+```
+
+### Runtime API Key
+
+For applications where the API key needs to be determined at runtime:
+
+```typescript
+import Limrun from '@limrun/api';
+
+function createClient(userApiKey: string) {
+  return new Limrun({
+    apiKey: userApiKey,
+  });
+}
+```
+
+## How Authentication Works
+
+When you make a request, the SDK automatically adds an `Authorization` header with your API key:
+
+```typescript
+// From client.ts:235-240
+protected async authHeaders(opts: FinalRequestOptions): Promise<NullableHeaders | undefined> {
+  if (this.apiKey == null) {
+    return undefined;
+  }
+  return buildHeaders([{ Authorization: `Bearer ${this.apiKey}` }]);
+}
+```
+
+The authorization header is formatted as: `Authorization: Bearer YOUR_API_KEY`
+
+## Authentication Validation
+
+The SDK validates that authentication is properly configured before making requests:
+
+```typescript
+// From client.ts:222-233
+protected validateHeaders({ values, nulls }: NullableHeaders) {
+  if (this.apiKey && values.get('authorization')) {
+    return;
+  }
+  if (nulls.has('authorization')) {
+    return;
+  }
+
+  throw new Error(
+    'Could not resolve authentication method. Expected the apiKey to be set. Or for the "Authorization" headers to be explicitly omitted',
+  );
+}
+```
+
+If no API key is provided and the `Authorization` header is not explicitly set, an error will be thrown.
+
+## Custom Base URL
+
+If you need to use a custom API endpoint (e.g., for testing or a private deployment), you can configure the `baseURL` option:
+
+```typescript
+export interface ClientOptions {
+  /**
+   * Override the default base URL for the API, e.g., "https://api.example.com/v2/"
+   *
+   * Defaults to process.env['LIMRUN_BASE_URL'].
+   */
+  baseURL?: string | null | undefined;
+  // ... other options
+}
+```
+
+### Using a Custom Endpoint
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  apiKey: 'your-api-key-here',
+  baseURL: 'https://custom.api.example.com',
+});
+```
+
+### Environment Variable
+
+You can also set the base URL via the `LIMRUN_BASE_URL` environment variable:
+
+```bash
+export LIMRUN_BASE_URL='https://custom.api.example.com'
+```
+
+### Default Base URL
+
+If neither the `baseURL` option nor the `LIMRUN_BASE_URL` environment variable is set, the SDK defaults to:
+
+```typescript
+baseURL: baseURL || `https://api.limrun.com`
+```
+
+## Error Handling
+
+If authentication fails, you'll receive an `AuthenticationError` (401 status code). See the [Error Handling](/core-concepts/error-handling) guide for more details on handling authentication errors.
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  apiKey: 'invalid-key',
+});
+
+try {
+  await client.androidInstances.create();
+} catch (err) {
+  if (err instanceof Limrun.AuthenticationError) {
+    console.error('Authentication failed:', err.message);
+    console.error('Status:', err.status); // 401
+  }
+}
+```

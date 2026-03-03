@@ -1,0 +1,344 @@
+---
+title: 'Custom Fetch Implementation'
+description: 'Configure custom fetch functions and proxy settings for different runtime environments'
+---
+
+The Limrun SDK uses the `fetch` API for HTTP requests. You can customize the fetch implementation and configure options like proxies for different runtime environments.
+
+## Custom Fetch Function
+
+By default, the SDK expects a global `fetch` function. You can provide a custom implementation in two ways:
+
+### Polyfill Global Fetch
+
+Replace the global `fetch` function:
+
+```typescript
+import fetch from 'my-fetch';
+
+globalThis.fetch = fetch;
+```
+
+This approach affects all code that uses `fetch` in your application.
+
+### Provide Fetch to Client
+
+Pass a custom `fetch` function directly to the client:
+
+```typescript
+import Limrun from '@limrun/api';
+import fetch from 'my-fetch';
+
+const client = new Limrun({ 
+  fetch,
+  apiKey: process.env.LIM_API_KEY,
+});
+```
+
+This approach only affects the Limrun client instance.
+
+<Note>
+  Providing a custom fetch function to the client is the recommended approach as it doesn't affect other parts of your application.
+</Note>
+
+## Fetch Options
+
+You can set custom `fetch` options without overriding the `fetch` function using the `fetchOptions` parameter. This accepts any standard `RequestInit` options.
+
+### Client-Level Options
+
+Set default options for all requests:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  fetchOptions: {
+    // RequestInit options
+    keepalive: true,
+    headers: {
+      'X-Custom-Header': 'value',
+    },
+  },
+});
+```
+
+### Request-Level Options
+
+Override options for individual requests:
+
+```typescript
+const instance = await client.androidInstances.create({
+  fetchOptions: {
+    // These override client-level options
+    priority: 'high',
+  },
+});
+```
+
+<Info>
+  Request-specific `fetchOptions` override client-level options.
+</Info>
+
+## Configuring Proxies
+
+Proxy configuration varies by runtime environment. Use `fetchOptions` to add runtime-specific proxy options.
+
+### Node.js with Undici
+
+Node.js uses [undici](https://github.com/nodejs/undici) for its native `fetch` implementation:
+
+```typescript
+import Limrun from '@limrun/api';
+import * as undici from 'undici';
+
+const proxyAgent = new undici.ProxyAgent('http://localhost:8888');
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+  fetchOptions: {
+    dispatcher: proxyAgent,
+  },
+});
+
+// Use the client normally
+const instance = await client.androidInstances.create();
+```
+
+<Tip>
+  See the [undici ProxyAgent documentation](https://github.com/nodejs/undici/blob/main/docs/docs/api/ProxyAgent.md#example---proxyagent-with-fetch) for advanced proxy configurations.
+</Tip>
+
+### Bun
+
+Bun provides native proxy support through fetch options:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+  fetchOptions: {
+    proxy: 'http://localhost:8888',
+  },
+});
+
+const instance = await client.androidInstances.create();
+```
+
+<Tip>
+  See [Bun's proxy documentation](https://bun.sh/guides/http/proxy) for more details.
+</Tip>
+
+### Deno
+
+Deno requires creating an HTTP client for proxy support:
+
+```typescript
+import Limrun from 'npm:@limrun/api';
+
+const httpClient = Deno.createHttpClient({ 
+  proxy: { url: 'http://localhost:8888' } 
+});
+
+const client = new Limrun({
+  apiKey: Deno.env.get('LIM_API_KEY'),
+  fetchOptions: {
+    client: httpClient,
+  },
+});
+
+const instance = await client.androidInstances.create();
+```
+
+<Tip>
+  See [Deno's HTTP client documentation](https://docs.deno.com/api/deno/~/Deno.createHttpClient) for advanced configurations.
+</Tip>
+
+## Authentication Proxy Example
+
+Combine custom fetch options with authentication:
+
+```typescript
+import Limrun from '@limrun/api';
+import * as undici from 'undici';
+
+const proxyAgent = new undici.ProxyAgent({
+  uri: 'http://localhost:8888',
+  auth: 'username:password',
+});
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+  fetchOptions: {
+    dispatcher: proxyAgent,
+  },
+});
+```
+
+## HTTPS Proxy with Custom CA
+
+For HTTPS proxies with custom certificates:
+
+```typescript
+import Limrun from '@limrun/api';
+import * as undici from 'undici';
+import * as fs from 'fs';
+
+const proxyAgent = new undici.ProxyAgent({
+  uri: 'https://secure-proxy.example.com:8443',
+  connect: {
+    ca: fs.readFileSync('./ca-certificate.pem'),
+  },
+});
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+  fetchOptions: {
+    dispatcher: proxyAgent,
+  },
+});
+```
+
+## Request Interceptor Pattern
+
+Create a custom fetch wrapper to intercept and modify requests:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const originalFetch = globalThis.fetch;
+
+const customFetch: typeof fetch = async (input, init) => {
+  console.log('Request:', input);
+  
+  // Add custom headers or modify request
+  const modifiedInit = {
+    ...init,
+    headers: {
+      ...init?.headers,
+      'X-Request-Time': new Date().toISOString(),
+    },
+  };
+  
+  const response = await originalFetch(input, modifiedInit);
+  
+  console.log('Response status:', response.status);
+  
+  return response;
+};
+
+const client = new Limrun({
+  fetch: customFetch,
+  apiKey: process.env.LIM_API_KEY,
+});
+```
+
+## Retry with Custom Fetch
+
+The SDK's built-in retry mechanism works with custom fetch functions:
+
+```typescript
+import Limrun from '@limrun/api';
+
+let requestCount = 0;
+
+const loggingFetch: typeof fetch = async (input, init) => {
+  requestCount++;
+  console.log(`Request #${requestCount}:`, input);
+  return fetch(input, init);
+};
+
+const client = new Limrun({
+  fetch: loggingFetch,
+  maxRetries: 3,
+  apiKey: process.env.LIM_API_KEY,
+});
+
+// Retries will be logged by loggingFetch
+const instance = await client.androidInstances.create();
+```
+
+## Testing with Mock Fetch
+
+Use a mock fetch implementation for testing:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const mockFetch: typeof fetch = async (input, init) => {
+  return new Response(
+    JSON.stringify({ id: 'test-instance', metadata: {} }),
+    { 
+      status: 200, 
+      headers: { 'Content-Type': 'application/json' } 
+    }
+  );
+};
+
+const client = new Limrun({
+  fetch: mockFetch,
+  apiKey: 'test-key',
+});
+
+const instance = await client.androidInstances.create();
+console.log(instance.id); // 'test-instance'
+```
+
+## Browser Considerations
+
+When using the SDK in browsers:
+
+<Warning>
+  Browser security policies may prevent certain fetch customizations. CORS and CSP policies apply to all fetch requests.
+</Warning>
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  apiKey: 'your-api-key',
+  fetchOptions: {
+    // Browser-compatible options
+    credentials: 'include',
+    mode: 'cors',
+  },
+});
+```
+
+## Cloudflare Workers
+
+Cloudflare Workers have their own fetch implementation:
+
+```typescript
+import Limrun from '@limrun/api';
+
+export default {
+  async fetch(request: Request, env: Env) {
+    const client = new Limrun({
+      apiKey: env.LIM_API_KEY,
+      fetchOptions: {
+        // Cloudflare-specific options
+        cf: {
+          cacheTtl: 300,
+          cacheEverything: true,
+        },
+      },
+    });
+    
+    const instance = await client.androidInstances.create();
+    return new Response(JSON.stringify(instance));
+  },
+};
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Client Options" icon="gear" href="/api-reference/client-options">
+    View all available client configuration options
+  </Card>
+  <Card title="Retries and Timeouts" icon="rotate" href="/core-concepts/retries-and-timeouts">
+    Configure retry behavior and request timeouts
+  </Card>
+</CardGroup>

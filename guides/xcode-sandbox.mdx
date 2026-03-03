@@ -1,0 +1,398 @@
+---
+title: 'Xcode Sandbox'
+description: 'Build and test iOS apps in the cloud with hot reload support'
+---
+
+## Overview
+
+The Xcode Sandbox provides a cloud-based Xcode build environment connected to an iOS simulator. You can sync your local source code, trigger builds, and see results in real-time with hot reload support.
+
+## Creating a Sandbox Client
+
+<Steps>
+  <Step title="From an iOS Instance">
+    When using an iOS instance with Xcode sandbox enabled:
+
+    ```typescript
+    import Limrun from '@limrun/api';
+    import { createXCodeSandboxClient } from '@limrun/api';
+
+    const client = new Limrun({
+      apiKey: process.env.LIM_API_KEY,
+    });
+
+    const instance = await client.iosInstances.create({
+      wait: true,
+      spec: {
+        sandbox: {
+          xcode: {
+            enabled: true,
+          },
+        },
+      },
+    });
+
+    const sandboxClient = await createXCodeSandboxClient({
+      apiUrl: instance.status.sandbox.xcode.url!,
+      token: process.env.LIM_API_KEY,
+    });
+    ```
+
+    <Note>
+      When using an iOS instance, the simulator is already configured.
+    </Note>
+  </Step>
+
+  <Step title="Standalone Sandbox (Advanced)">
+    When using a standalone sandbox, you need to configure the simulator:
+
+    ```typescript
+    const sandboxClient = await createXCodeSandboxClient({
+      apiUrl: 'https://sandbox.example.com',
+      token: 'sandbox-token',
+      simulator: {
+        apiUrl: 'https://simulator.example.com',
+        token: 'simulator-token', // Optional, defaults to sandbox token
+      },
+    });
+    ```
+  </Step>
+</Steps>
+
+## Syncing Source Code
+
+Sync your local iOS project to the sandbox:
+
+### One-Time Sync
+
+```typescript
+const result = await sandboxClient.sync('./my-ios-app');
+console.log('Source code synced');
+```
+
+### Watch Mode (Hot Reload)
+
+Automatically re-sync when files change:
+
+```typescript
+const result = await sandboxClient.sync('./my-ios-app', {
+  watch: true,
+});
+
+console.log('Watching for changes...');
+
+// Stop watching when done
+if (result.stopWatching) {
+  result.stopWatching();
+}
+```
+
+### Sync Options
+
+```typescript
+const result = await sandboxClient.sync('./my-ios-app', {
+  // Enable watch mode
+  watch: true,
+  
+  // Custom cache key for delta basis
+  cacheKey: 'my-app-development',
+  
+  // Custom cache directory
+  basisCacheDir: './.limsync-cache',
+  
+  // Maximum patch size in bytes
+  maxPatchBytes: 10 * 1024 * 1024, // 10MB
+  
+  // Custom file filter
+  filter: (relativePath) => {
+    // Exclude test files
+    if (relativePath.includes('Tests/')) return false;
+    // Include everything else
+    return true;
+  },
+  
+  // Custom logging
+  log: (level, msg) => {
+    console.log(`[${level}] ${msg}`);
+  },
+});
+```
+
+### Default Exclusions
+
+The following are automatically excluded:
+- Build outputs: `build/`, `.build/`, `DerivedData/`
+- Index files: `Index.noindex/`, `ModuleCache.noindex/`, `.index-build/`
+- Dependencies: `.swiftpm/`, `Pods/`, `Carthage/Build/`
+- Version control: `.git/`
+- System files: `.DS_Store`
+- Debug symbols: `.dSYM/`
+- User data: `xcuserdata/`
+- Sync cache: `.limsync-cache/`
+
+## Building with Xcode
+
+Trigger an `xcodebuild` command and stream output:
+
+### Basic Build
+
+```typescript
+const build = sandboxClient.xcodebuild();
+
+// Stream output line by line
+build.stdout.on('data', (line) => {
+  console.log('[build]', line);
+});
+
+build.stderr.on('data', (line) => {
+  console.error('[error]', line);
+});
+
+// Wait for completion
+const { exitCode } = await build;
+
+if (exitCode === 0) {
+  console.log('Build succeeded!');
+} else {
+  console.error('Build failed with code:', exitCode);
+}
+```
+
+### Build Configuration
+
+```typescript
+const build = sandboxClient.xcodebuild({
+  workspace: 'MyApp.xcworkspace',
+  scheme: 'MyApp',
+});
+
+await build;
+```
+
+```typescript
+const build = sandboxClient.xcodebuild({
+  project: 'MyApp.xcodeproj',
+  scheme: 'MyApp',
+});
+
+await build;
+```
+
+## Complete Development Workflow
+
+<Steps>
+  <Step title="Setup">
+    Create instance and sandbox client:
+
+    ```typescript
+    import Limrun from '@limrun/api';
+    import { createXCodeSandboxClient } from '@limrun/api';
+
+    const client = new Limrun({
+      apiKey: process.env.LIM_API_KEY,
+    });
+
+    const instance = await client.iosInstances.create({
+      wait: true,
+      spec: {
+        sandbox: { xcode: { enabled: true } },
+      },
+    });
+
+    const sandbox = await createXCodeSandboxClient({
+      apiUrl: instance.status.sandbox.xcode.url!,
+      token: process.env.LIM_API_KEY,
+    });
+    ```
+  </Step>
+
+  <Step title="Sync Code with Watch Mode">
+    ```typescript
+    const syncResult = await sandbox.sync('./MyiOSApp', {
+      watch: true,
+    });
+
+    console.log('Source code synced, watching for changes...');
+    ```
+  </Step>
+
+  <Step title="Initial Build">
+    ```typescript
+    const build = sandbox.xcodebuild({
+      workspace: 'MyApp.xcworkspace',
+      scheme: 'MyApp',
+    });
+
+    build.stdout.on('data', (line) => console.log(line));
+    build.stderr.on('data', (line) => console.error(line));
+
+    const { exitCode } = await build;
+    console.log('Initial build finished:', exitCode === 0 ? 'success' : 'failed');
+    ```
+  </Step>
+
+  <Step title="Develop with Hot Reload">
+    ```typescript
+    // Make changes to your source code locally
+    // The sandbox automatically syncs changes and rebuilds
+    
+    console.log('Watching for file changes...');
+    console.log('Edit your source files and see builds triggered automatically');
+    
+    // Keep the process running
+    await new Promise(() => {});
+    ```
+  </Step>
+
+  <Step title="Clean Up">
+    ```typescript
+    // Stop watching
+    if (syncResult.stopWatching) {
+      syncResult.stopWatching();
+    }
+
+    // Delete instance
+    await client.iosInstances.delete(instance.metadata.id);
+    ```
+  </Step>
+</Steps>
+
+## Advanced: Custom File Filtering
+
+Implement complex filtering logic:
+
+```typescript
+const result = await sandbox.sync('./MyApp', {
+  filter: (relativePath) => {
+    // Exclude specific directories
+    if (relativePath.startsWith('Pods/')) return false;
+    if (relativePath.startsWith('build/')) return false;
+    
+    // Include only Swift and Objective-C files in src/
+    if (relativePath.startsWith('src/')) {
+      return relativePath.endsWith('.swift') ||
+             relativePath.endsWith('.m') ||
+             relativePath.endsWith('.h');
+    }
+    
+    // Include all other files
+    return true;
+  },
+});
+```
+
+## Advanced: Multiple Builds
+
+Trigger multiple build configurations:
+
+```typescript
+// Build for simulator
+const simBuild = sandbox.xcodebuild({
+  workspace: 'MyApp.xcworkspace',
+  scheme: 'MyApp-Simulator',
+});
+
+simBuild.stdout.on('data', (line) => {
+  console.log('[simulator]', line);
+});
+
+await simBuild;
+
+// Build for device (if supported)
+const deviceBuild = sandbox.xcodebuild({
+  workspace: 'MyApp.xcworkspace',
+  scheme: 'MyApp-Device',
+});
+
+deviceBuild.stdout.on('data', (line) => {
+  console.log('[device]', line);
+});
+
+await deviceBuild;
+```
+
+## Logging
+
+Control sandbox client verbosity:
+
+```typescript
+const sandbox = await createXCodeSandboxClient({
+  apiUrl: sandboxUrl,
+  token: apiKey,
+  logLevel: 'debug', // 'none' | 'error' | 'warn' | 'info' | 'debug'
+});
+```
+
+Log levels:
+- `none`: No logging
+- `error`: Only errors
+- `warn`: Warnings and errors
+- `info`: General info, warnings, and errors (default)
+- `debug`: All messages including sync details
+
+## Error Handling
+
+<CodeGroup>
+```typescript Sync Errors
+try {
+  await sandbox.sync('./MyApp');
+} catch (err) {
+  console.error('Failed to sync:', err.message);
+}
+```
+
+```typescript Build Errors
+const build = sandbox.xcodebuild();
+
+build.stdout.on('data', (line) => console.log(line));
+build.stderr.on('data', (line) => console.error(line));
+
+const { exitCode } = await build;
+
+if (exitCode !== 0) {
+  throw new Error(`Build failed with exit code ${exitCode}`);
+}
+```
+
+```typescript Watch Mode Cleanup
+const result = await sandbox.sync('./MyApp', { watch: true });
+
+// Ensure cleanup on exit
+process.on('SIGINT', () => {
+  if (result.stopWatching) {
+    result.stopWatching();
+  }
+  process.exit(0);
+});
+```
+</CodeGroup>
+
+## Delta Sync Optimization
+
+The sync operation uses delta compression to minimize upload size:
+
+1. **First sync**: Full upload of all files
+2. **Subsequent syncs**: Only changed files uploaded
+3. **Basis caching**: Previous state cached locally for delta calculation
+4. **Patch mode**: If delta is small enough, sends patch instead of full files
+
+```typescript
+// First sync - uploads all files
+await sandbox.sync('./MyApp');
+
+// Change a single file
+// Second sync - only uploads the changed file
+await sandbox.sync('./MyApp');
+```
+
+<Tip>
+  Use watch mode during development to automatically sync changes and trigger rebuilds.
+</Tip>
+
+<Note>
+  The sandbox client automatically handles file filtering to exclude build artifacts and dependencies.
+</Note>
+
+<Warning>
+  Ensure your local project structure matches what Xcode expects. The sandbox runs `xcodebuild` in the synced directory.
+</Warning>

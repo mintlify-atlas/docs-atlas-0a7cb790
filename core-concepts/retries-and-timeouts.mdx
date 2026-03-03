@@ -1,0 +1,352 @@
+---
+title: 'Retries and Timeouts'
+description: 'Configure retry behavior and request timeouts in the Limrun SDK'
+---
+
+## Overview
+
+The Limrun SDK automatically retries failed requests and enforces timeouts to ensure your application remains responsive. Both features are configurable at the client and request level.
+
+## Retries
+
+### Default Retry Behavior
+
+By default, the SDK automatically retries requests **2 times** when encountering temporary failures:
+
+```typescript
+export interface ClientOptions {
+  /**
+   * The maximum number of times that the client will retry a request in case of a
+   * temporary failure, like a network error or a 5XX error from the server.
+   *
+   * @default 2
+   */
+  maxRetries?: number | undefined;
+}
+```
+
+### Which Errors Are Retried
+
+The SDK automatically retries requests for the following conditions:
+
+- **408** Request Timeout
+- **409** Conflict (lock timeouts)
+- **429** Rate Limit
+- **≥500** Internal Server Errors
+- **Connection errors** (network connectivity issues)
+- **Timeout errors** (request exceeded timeout duration)
+
+From the source code (client.ts:574-595):
+
+```typescript
+private async shouldRetry(response: Response): Promise<boolean> {
+  // Note this is not a standard header.
+  const shouldRetryHeader = response.headers.get('x-should-retry');
+
+  // If the server explicitly says whether or not to retry, obey.
+  if (shouldRetryHeader === 'true') return true;
+  if (shouldRetryHeader === 'false') return false;
+
+  // Retry on request timeouts.
+  if (response.status === 408) return true;
+
+  // Retry on lock timeouts.
+  if (response.status === 409) return true;
+
+  // Retry on rate limits.
+  if (response.status === 429) return true;
+
+  // Retry internal errors.
+  if (response.status >= 500) return true;
+
+  return false;
+}
+```
+
+### Server-Controlled Retries
+
+The server can control retry behavior using the `x-should-retry` header:
+
+- `x-should-retry: true` - Forces a retry even if the status code wouldn't normally be retried
+- `x-should-retry: false` - Prevents retry even if the status code would normally be retried
+
+### Configuring Retries
+
+#### Client-Level Configuration
+
+Set the default retry behavior for all requests:
+
+```typescript
+import Limrun from '@limrun/api';
+
+// Disable retries
+const client = new Limrun({
+  maxRetries: 0,
+});
+
+// Increase retries to 5
+const client = new Limrun({
+  maxRetries: 5,
+});
+```
+
+#### Request-Level Configuration
+
+Override retry behavior for specific requests:
+
+```typescript
+// Retry this specific request up to 5 times
+await client.androidInstances.create({
+  maxRetries: 5,
+});
+
+// Disable retries for this request
+await client.androidInstances.list({
+  maxRetries: 0,
+});
+```
+
+### Retry Backoff Strategy
+
+The SDK uses **exponential backoff with jitter** to avoid overwhelming the server:
+
+```typescript
+// From client.ts:636-649
+private calculateDefaultRetryTimeoutMillis(retriesRemaining: number, maxRetries: number): number {
+  const initialRetryDelay = 0.5;
+  const maxRetryDelay = 8.0;
+
+  const numRetries = maxRetries - retriesRemaining;
+
+  // Apply exponential backoff, but not more than the max.
+  const sleepSeconds = Math.min(initialRetryDelay * Math.pow(2, numRetries), maxRetryDelay);
+
+  // Apply some jitter, take up to at most 25 percent of the retry time.
+  const jitter = 1 - Math.random() * 0.25;
+
+  return sleepSeconds * jitter * 1000;
+}
+```
+
+**Key characteristics:**
+
+- Initial delay: 0.5 seconds
+- Maximum delay: 8.0 seconds
+- Jitter: Up to 25% variance to prevent thundering herd
+- Growth: Exponential (2^n)
+
+**Example retry delays:**
+
+| Retry # | Base Delay | Delay Range (with jitter) |
+|---------|------------|---------------------------|
+| 1       | 0.5s       | 0.375s - 0.5s            |
+| 2       | 1.0s       | 0.75s - 1.0s             |
+| 3       | 2.0s       | 1.5s - 2.0s              |
+| 4       | 4.0s       | 3.0s - 4.0s              |
+| 5+      | 8.0s       | 6.0s - 8.0s              |
+
+### Server-Specified Retry Delays
+
+The server can specify when to retry using standard HTTP headers:
+
+```typescript
+// From client.ts:603-631
+// The SDK respects retry-after-ms (non-standard) and Retry-After (standard) headers
+const retryAfterMillisHeader = responseHeaders?.get('retry-after-ms');
+const retryAfterHeader = responseHeaders?.get('retry-after');
+```
+
+**Supported headers:**
+
+- `retry-after-ms`: Milliseconds to wait before retrying
+- `Retry-After`: Seconds to wait, or an HTTP date
+
+If the server specifies a reasonable delay (< 60 seconds), the SDK uses that instead of the exponential backoff.
+
+## Timeouts
+
+### Default Timeout
+
+Requests time out after **5 minutes (300,000 milliseconds)** by default:
+
+```typescript
+static DEFAULT_TIMEOUT = 300000; // 5 minutes
+```
+
+From ClientOptions:
+
+```typescript
+export interface ClientOptions {
+  /**
+   * The maximum amount of time (in milliseconds) that the client should wait for a response
+   * from the server before timing out a single request.
+   *
+   * Note that request timeouts are retried by default, so in a worst-case scenario you may wait
+   * much longer than this timeout before the promise succeeds or fails.
+   *
+   * @unit milliseconds
+   */
+  timeout?: number | undefined;
+}
+```
+
+### Configuring Timeouts
+
+#### Client-Level Configuration
+
+Set the default timeout for all requests:
+
+```typescript
+import Limrun from '@limrun/api';
+
+// Set 20 second timeout
+const client = new Limrun({
+  timeout: 20 * 1000, // 20 seconds in milliseconds
+});
+
+// Set 1 minute timeout
+const client = new Limrun({
+  timeout: 60 * 1000,
+});
+```
+
+#### Request-Level Configuration
+
+Override timeout for specific requests:
+
+```typescript
+// 5 second timeout for this request
+await client.androidInstances.create({
+  timeout: 5 * 1000,
+});
+
+// 30 second timeout for this request
+await client.androidInstances.list({
+  timeout: 30 * 1000,
+});
+```
+
+### Timeout Behavior
+
+When a request times out:
+
+1. An `APIConnectionTimeoutError` is thrown
+2. The request is automatically retried (by default)
+3. After all retries are exhausted, the final timeout error is thrown
+
+```typescript
+try {
+  await client.androidInstances.create({
+    timeout: 5000, // 5 second timeout
+  });
+} catch (err) {
+  if (err instanceof Limrun.APIConnectionTimeoutError) {
+    console.error('Request timed out after all retries');
+  }
+}
+```
+
+### Total Wait Time
+
+Because timeouts are retried by default, the **total time you may wait** is:
+
+```
+Total Time = (timeout × (maxRetries + 1)) + retry_delays
+```
+
+**Example with defaults:**
+
+- Timeout: 5 minutes (300,000ms)
+- Max retries: 2
+- Total possible wait: ~15+ minutes (3 attempts × 5 minutes + retry delays)
+
+<Warning>
+If you need guaranteed response times, set both `maxRetries: 0` and a shorter `timeout` value.
+</Warning>
+
+### Disabling Timeout Retries
+
+To prevent retries on timeout:
+
+```typescript
+const client = new Limrun({
+  timeout: 10 * 1000,  // 10 second timeout
+  maxRetries: 0,        // No retries
+});
+```
+
+## Best Practices
+
+### Long-Running Operations
+
+For operations that may take a long time (e.g., creating instances), increase the timeout:
+
+```typescript
+await client.androidInstances.create({
+  timeout: 10 * 60 * 1000, // 10 minutes
+});
+```
+
+### Critical Operations
+
+For critical operations where you want more retry attempts:
+
+```typescript
+await client.androidInstances.create({
+  maxRetries: 5,
+  timeout: 30 * 1000,
+});
+```
+
+### Quick Fail Operations
+
+For operations where you want to fail fast:
+
+```typescript
+await client.androidInstances.list({
+  maxRetries: 0,
+  timeout: 5 * 1000,
+});
+```
+
+### Rate-Limited Environments
+
+If you frequently hit rate limits, you might want to reduce retries to fail faster:
+
+```typescript
+const client = new Limrun({
+  maxRetries: 1, // Only retry once
+});
+```
+
+## Monitoring Retries
+
+The SDK includes retry information in request headers:
+
+```typescript
+// From client.ts:695-708
+const headers = buildHeaders([
+  // ...
+  {
+    'X-Stainless-Retry-Count': String(retryCount),
+    // ...
+  },
+  // ...
+]);
+```
+
+You can use logging to monitor retry behavior:
+
+```typescript
+const client = new Limrun({
+  logLevel: 'debug', // Shows retry attempts in logs
+});
+```
+
+See the logs for retry information:
+
+```
+[log_a1b2c3] connection timed out - retrying, 2 attempts remaining
+[log_a1b2c3] connection timed out - retrying, 1 attempts remaining
+[log_a1b2c3] connection timed out - error; no more retries left
+```

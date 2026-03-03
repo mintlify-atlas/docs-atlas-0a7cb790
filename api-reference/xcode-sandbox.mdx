@@ -1,0 +1,256 @@
+---
+title: "Xcode Sandbox Client"
+description: "Create and manage sandboxed Xcode build environments"
+---
+
+## createXCodeSandboxClient()
+
+Creates a client for interacting with a sandboxed Xcode build service.
+
+```typescript
+import { createXCodeSandboxClient } from 'limrun';
+
+const client = await createXCodeSandboxClient({
+  apiUrl: instance.status.sandbox.xcode.url,
+  token: apiKey,
+});
+```
+
+### Parameters
+
+<ParamField path="options" type="CreateXCodeSandboxClientOptions" required>
+  Configuration options for the Xcode sandbox client
+  
+  <ParamField path="apiUrl" type="string" required>
+    The API URL of the Xcode sandbox server
+  </ParamField>
+  
+  <ParamField path="token" type="string" required>
+    Auth token for the sandbox
+  </ParamField>
+  
+  <ParamField path="simulator" type="SimulatorConfig">
+    Simulator (limulator) connection details. Only needed if the sandbox is not already configured (e.g., when created outside of an iOS instance). When provided, the client will call POST /simulator to set up the connection.
+    
+    <ParamField path="apiUrl" type="string" required>
+      The API URL of the simulator (limulator)
+    </ParamField>
+    
+    <ParamField path="token" type="string">
+      Auth token for the simulator. If not provided, uses the sandbox token.
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="logLevel" type="LogLevel" default="info">
+    Controls logging verbosity. One of: `'none'`, `'error'`, `'warn'`, `'info'`, `'debug'`
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="client" type="Promise<XCodeSandboxClient>">
+  A promise that resolves to an XCodeSandboxClient instance
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+```typescript Using iOS Instance
+// When using an iOS instance (simulator already configured)
+const client = await createXCodeSandboxClient({
+  apiUrl: instance.status.sandbox.xcode.url,
+  token: apiKey,
+});
+```
+
+```typescript Standalone Sandbox
+// When using a standalone sandbox (need to configure simulator)
+const client = await createXCodeSandboxClient({
+  apiUrl: 'https://sandbox.example.com',
+  token: 'xxx',
+  simulator: {
+    apiUrl: 'https://limulator.example.com',
+    token: 'yyy', // optional, defaults to sandbox token
+  },
+});
+```
+
+```typescript Complete Workflow
+// Sync code and build
+const client = await createXCodeSandboxClient({
+  apiUrl: instance.status.sandbox.xcode.url,
+  token: apiKey,
+});
+
+await client.sync('./my-ios-app', { watch: true });
+const build = client.xcodebuild();
+build.stdout.on('data', (line) => console.log('[build]', line));
+const { exitCode } = await build;
+```
+</CodeGroup>
+
+---
+
+## XCodeSandboxClient
+
+Client interface for interacting with a sandboxed Xcode build service.
+
+### Methods
+
+#### sync()
+
+Sync source code to the sandbox. In watch mode, keeps syncing on changes. Does NOT trigger builds - call xcodebuild() when ready.
+
+```typescript
+const result = await client.sync('./my-ios-app', {
+  watch: true,
+  filter: (path) => !path.startsWith('build/'),
+});
+```
+
+<ParamField path="localCodePath" type="string" required>
+  Path to the local code directory to sync
+</ParamField>
+
+<ParamField path="opts" type="SyncOptions">
+  Sync configuration options
+  
+  <ParamField path="cacheKey" type="string" default="xcode-sandbox">
+    Cache scoping key for delta basis caching. This is not sent to the server.
+  </ParamField>
+  
+  <ParamField path="basisCacheDir" type="string">
+    Directory for the client-side folder-sync cache
+  </ParamField>
+  
+  <ParamField path="maxPatchBytes" type="number">
+    Max patch size (bytes) to send as delta before falling back to full upload
+  </ParamField>
+  
+  <ParamField path="watch" type="boolean" default={false}>
+    If true, watch the folder and re-sync on any changes
+  </ParamField>
+  
+  <ParamField path="log" type="(level: 'debug' | 'info' | 'warn' | 'error', msg: string) => void">
+    Custom logging function
+  </ParamField>
+  
+  <ParamField path="filter" type="(relativePath: string) => boolean">
+    Optional filter function to include/exclude files and directories. Called with the relative path from the sync root (using forward slashes). For directories, the path ends with '/'. Return true to include, false to exclude.
+    
+    ```typescript
+    // Exclude build folder
+    filter: (path) => !path.startsWith('build/')
+    
+    // Only include source files
+    filter: (path) => path.startsWith('src/') || path.endsWith('.json')
+    ```
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="Promise<SyncResult>">
+  Sync result containing stopWatching function if watch mode is enabled
+  
+  <ResponseField name="stopWatching" type="() => void">
+    Present only when watch=true; call to stop watching
+  </ResponseField>
+</ResponseField>
+
+#### xcodebuild()
+
+Trigger xcodebuild on the synced source code. Returns a ChildProcess-like object for streaming output.
+
+```typescript
+const build = client.xcodebuild({
+  scheme: 'MyApp',
+  workspace: 'MyApp.xcworkspace',
+});
+
+// Stream build output
+build.stdout.on('data', (line) => console.log(line));
+
+const { exitCode } = await build;
+```
+
+<ParamField path="opts" type="XcodeBuildConfig">
+  Build configuration options
+  
+  <ParamField path="workspace" type="string">
+    Path to .xcworkspace file
+  </ParamField>
+  
+  <ParamField path="project" type="string">
+    Path to .xcodeproj file
+  </ParamField>
+  
+  <ParamField path="scheme" type="string">
+    Scheme name to build
+  </ParamField>
+</ParamField>
+
+<ResponseField name="process" type="ExecChildProcess">
+  A ChildProcess-like object that can be awaited or used for streaming. See [exec](/api-reference/exec) for details.
+</ResponseField>
+
+---
+
+## Types
+
+### LogLevel
+
+```typescript
+type LogLevel = 'none' | 'error' | 'warn' | 'info' | 'debug';
+```
+
+Controls logging verbosity for the Xcode sandbox client.
+
+### XcodeBuildConfig
+
+```typescript
+type XcodeBuildConfig = {
+  workspace?: string;
+  project?: string;
+  scheme?: string;
+};
+```
+
+Build configuration for xcodebuild command.
+
+### SimulatorConfig
+
+```typescript
+type SimulatorConfig = {
+  /** The API URL of the simulator (limulator) */
+  apiUrl: string;
+  /** Auth token for the simulator. If not provided, uses the sandbox token. */
+  token?: string;
+};
+```
+
+Simulator connection details for configuring the sandbox.
+
+### SyncOptions
+
+```typescript
+type SyncOptions = {
+  cacheKey?: string;
+  basisCacheDir?: string;
+  maxPatchBytes?: number;
+  watch?: boolean;
+  log?: (level: 'debug' | 'info' | 'warn' | 'error', msg: string) => void;
+  filter?: (relativePath: string) => boolean;
+};
+```
+
+Options for syncing source code to the sandbox.
+
+### SyncResult
+
+```typescript
+type SyncResult = {
+  /** Present only when watch=true; call to stop watching */
+  stopWatching?: () => void;
+};
+```
+
+Result of a sync operation.

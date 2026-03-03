@@ -1,0 +1,290 @@
+---
+title: 'iOS Instances'
+description: 'Create and manage iOS simulator instances with the Limrun SDK'
+---
+
+## Overview
+
+iOS instances provide on-demand iOS simulators in the cloud. You can create, list, retrieve, and delete instances programmatically using the SDK.
+
+## Creating an Instance
+
+<Steps>
+  <Step title="Basic Instance Creation">
+    Create an iOS instance with default settings:
+
+    ```typescript
+    import Limrun from '@limrun/api';
+
+    const client = new Limrun({
+      apiKey: process.env.LIM_API_KEY,
+    });
+
+    const instance = await client.iosInstances.create();
+    console.log('Instance ID:', instance.metadata.id);
+    console.log('State:', instance.status.state);
+    ```
+  </Step>
+
+  <Step title="Wait for Ready State">
+    Use the `wait` parameter to block until the instance is ready:
+
+    ```typescript
+    const instance = await client.iosInstances.create({
+      wait: true,
+    });
+
+    // Instance is now in 'ready' state
+    console.log('API URL:', instance.status.apiUrl);
+    ```
+  </Step>
+
+  <Step title="Configure Instance Settings">
+    Customize timeouts, region, and metadata:
+
+    ```typescript
+    const instance = await client.iosInstances.create({
+      wait: true,
+      metadata: {
+        displayName: 'iPhone Testing',
+        labels: {
+          env: 'staging',
+          platform: 'ios',
+        },
+      },
+      spec: {
+        region: 'us-east',
+        inactivityTimeout: '15m',
+        hardTimeout: '2h',
+      },
+    });
+    ```
+  </Step>
+</Steps>
+
+## Instance Type
+
+The `IosInstance` type contains metadata, spec, and status information:
+
+```typescript
+interface IosInstance {
+  metadata: {
+    id: string;
+    createdAt: string;
+    organizationId: string;
+    displayName?: string;
+    labels?: { [key: string]: string };
+    terminatedAt?: string;
+  };
+
+  spec: {
+    inactivityTimeout: string;
+    region: string;
+    hardTimeout?: string;
+  };
+
+  status: {
+    token: string;
+    state: 'unknown' | 'creating' | 'assigned' | 'ready' | 'terminated';
+    apiUrl?: string;
+    endpointWebSocketUrl?: string;
+    mcpUrl?: string;
+    errorMessage?: string;
+    targetHttpPortUrlPrefix?: string;
+    sandbox?: {
+      xcode?: {
+        url?: string;
+      };
+    };
+  };
+}
+```
+
+## Listing Instances
+
+List all iOS instances with optional filters:
+
+<CodeGroup>
+```typescript List All
+for await (const instance of client.iosInstances.list()) {
+  console.log(instance.metadata.id, instance.status.state);
+}
+```
+
+```typescript Filter by State
+for await (const instance of client.iosInstances.list({
+  state: 'ready,assigned',
+})) {
+  console.log('Active instance:', instance.metadata.id);
+}
+```
+
+```typescript Filter by Labels
+for await (const instance of client.iosInstances.list({
+  labelSelector: 'env=staging,platform=ios',
+})) {
+  console.log('Matched instance:', instance.metadata.id);
+}
+```
+
+```typescript Filter by Region
+for await (const instance of client.iosInstances.list({
+  region: 'us-east',
+})) {
+  console.log('US East instance:', instance.metadata.id);
+}
+```
+</CodeGroup>
+
+## Getting an Instance
+
+Retrieve a specific instance by ID:
+
+```typescript
+const instance = await client.iosInstances.get('instance-id-here');
+
+console.log('Display Name:', instance.metadata.displayName);
+console.log('State:', instance.status.state);
+console.log('API URL:', instance.status.apiUrl);
+```
+
+## Deleting an Instance
+
+Terminate an instance when you're done:
+
+```typescript
+await client.iosInstances.delete('instance-id-here');
+console.log('Instance deleted');
+```
+
+## Connecting to an Instance
+
+Once an instance is ready, use `createInstanceClient` to interact with it:
+
+```typescript
+import { createInstanceClient } from '@limrun/api';
+
+const instance = await client.iosInstances.create({ wait: true });
+
+const iosClient = await createInstanceClient({
+  apiUrl: instance.status.apiUrl!,
+  token: instance.status.token,
+});
+
+// Take a screenshot
+const screenshot = await iosClient.screenshot();
+console.log('Screenshot:', screenshot.base64.substring(0, 50) + '...');
+console.log('Dimensions:', screenshot.width, 'x', screenshot.height);
+
+// Tap at coordinates
+await iosClient.tap(100, 200);
+
+// Type text
+await iosClient.typeText('Hello, iOS!');
+
+// Launch an app
+await iosClient.launchApp('com.example.myapp');
+
+// Clean up
+iosClient.disconnect();
+await client.iosInstances.delete(instance.metadata.id);
+```
+
+## Advanced: Install Apps on Creation
+
+Install iOS apps during instance creation:
+
+```typescript
+const instance = await client.iosInstances.create({
+  wait: true,
+  spec: {
+    initialAssets: [
+      {
+        kind: 'App',
+        source: 'URL',
+        url: 'https://example.com/MyApp.app.zip',
+        launchMode: 'ForegroundIfRunning',
+      },
+      {
+        kind: 'App',
+        source: 'AssetName',
+        assetName: 'my-ios-app-v2.1.0',
+        launchMode: 'RelaunchIfRunning',
+      },
+    ],
+  },
+});
+```
+
+### Launch Modes
+
+- `ForegroundIfRunning`: Bring to foreground if already running, otherwise launch
+- `RelaunchIfRunning`: Kill and relaunch if already running
+- Omit to skip launching after installation
+
+## Advanced: Reuse Existing Instances
+
+Prevent duplicate instances by reusing existing ones with matching labels:
+
+```typescript
+const instance = await client.iosInstances.create({
+  reuseIfExists: true,
+  metadata: {
+    labels: {
+      app: 'my-ios-app',
+      version: 'v2.1.0',
+    },
+  },
+  spec: {
+    region: 'us-east',
+  },
+});
+
+// Returns existing instance if one with same labels and region exists
+```
+
+## Advanced: Xcode Sandbox
+
+Enable the Xcode sandbox for building and testing:
+
+```typescript
+const instance = await client.iosInstances.create({
+  wait: true,
+  spec: {
+    sandbox: {
+      xcode: {
+        enabled: true,
+      },
+    },
+  },
+});
+
+// Access sandbox URL
+const sandboxUrl = instance.status.sandbox?.xcode?.url;
+console.log('Xcode Sandbox URL:', sandboxUrl);
+```
+
+See the [Xcode Sandbox guide](/guides/xcode-sandbox) for more details.
+
+## Instance Client Capabilities
+
+The iOS instance client provides rich interaction capabilities:
+
+- **Screenshots**: Capture device screen with dimensions
+- **Element Tree**: Query accessibility hierarchy
+- **Tap & Input**: Tap coordinates or elements, type text, press keys
+- **App Management**: Install, launch, terminate apps
+- **Device Control**: Set orientation, scroll, toggle keyboard
+- **Logs**: Stream app logs and syslog
+- **Commands**: Run simctl, xcrun, xcodebuild
+- **App Sync**: Hot-reload iOS apps during development
+
+See the [API Reference](/api-reference) for complete details.
+
+<Note>
+  Instances are automatically terminated after `inactivityTimeout` (default: 3 minutes) or `hardTimeout` if specified.
+</Note>
+
+<Tip>
+  Use the `wait: true` parameter to ensure the instance is fully ready before connecting.
+</Tip>

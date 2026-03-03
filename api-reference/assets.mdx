@@ -1,0 +1,410 @@
+---
+title: 'Assets'
+description: 'API reference for managing assets in the Limrun TypeScript SDK'
+---
+
+The `Assets` resource provides methods to manage application binaries, configuration files, and other assets that can be used with iOS and Android instances.
+
+## Methods
+
+### getOrCreate()
+
+Creates an asset and returns upload and download URLs. If there is a corresponding file uploaded in the storage with the given name, its MD5 is returned so you can check if a re-upload is necessary.
+
+```typescript
+getOrCreate(
+  body: AssetGetOrCreateParams,
+  options?: RequestOptions
+): APIPromise<AssetGetOrCreateResponse>
+```
+
+#### Parameters
+
+<ParamField body="name" type="string" required>
+  The unique name for the asset. This will be used to reference the asset when creating instances.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="id" type="string" required>
+  Unique identifier for the asset.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  The name of the asset.
+</ResponseField>
+
+<ResponseField name="signedUploadUrl" type="string" required>
+  Pre-signed URL for uploading the asset file. Use this URL to PUT your file content.
+</ResponseField>
+
+<ResponseField name="signedDownloadUrl" type="string" required>
+  Pre-signed URL for downloading the asset file.
+</ResponseField>
+
+<ResponseField name="md5" type="string" optional>
+  MD5 hash of the file. Returned only if there is a corresponding file uploaded already. If this is not present, you must upload the file using the `signedUploadUrl` before the asset can be used.
+</ResponseField>
+
+#### Example
+
+```typescript
+// Create or get an asset
+const asset = await limrun.assets.getOrCreate({
+  name: "my-app-v1.2.3.apk"
+});
+
+if (!asset.md5) {
+  // File doesn't exist yet, upload it
+  const fileBuffer = await fs.readFile("./my-app-v1.2.3.apk");
+  
+  await fetch(asset.signedUploadUrl, {
+    method: "PUT",
+    body: fileBuffer,
+    headers: {
+      "Content-Type": "application/vnd.android.package-archive"
+    }
+  });
+  
+  console.log("Asset uploaded successfully");
+} else {
+  console.log("Asset already exists with MD5:", asset.md5);
+}
+
+// Use the asset when creating an instance
+const instance = await limrun.androidInstances.create({
+  spec: {
+    initialAssets: [
+      {
+        kind: "App",
+        source: "AssetName",
+        assetName: "my-app-v1.2.3.apk"
+      }
+    ]
+  }
+});
+```
+
+---
+
+### list()
+
+List organization's assets with optional filters.
+
+```typescript
+list(
+  query?: AssetListParams,
+  options?: RequestOptions
+): APIPromise<AssetListResponse>
+```
+
+#### Parameters
+
+<ParamField query="nameFilter" type="string" optional>
+  Query by file name. Supports partial matching.
+</ParamField>
+
+<ParamField query="includeAppStore" type="boolean" optional>
+  If true, also includes assets from Limrun App Store where you have access to. App Store assets will be returned with a `"appstore/"` prefix in their names.
+</ParamField>
+
+<ParamField query="includeDownloadUrl" type="boolean" optional>
+  Toggles whether a download URL should be included in the response.
+</ParamField>
+
+<ParamField query="includeUploadUrl" type="boolean" optional>
+  Toggles whether an upload URL should be included in the response.
+</ParamField>
+
+<ParamField query="limit" type="number" optional>
+  Maximum number of items to be returned. The default is 50.
+</ParamField>
+
+#### Returns
+
+Returns an array of `Asset` objects.
+
+<ResponseField name="Asset[]" type="array" required>
+  <ResponseField name="id" type="string" required>
+    Unique identifier for the asset.
+  </ResponseField>
+  
+  <ResponseField name="name" type="string" required>
+    The name of the asset.
+  </ResponseField>
+  
+  <ResponseField name="displayName" type="string" optional>
+    Human-readable display name for the asset. If not set, the name should be used.
+  </ResponseField>
+  
+  <ResponseField name="os" type="string" optional>
+    The operating system this asset is for: `"ios"` or `"android"`. If not set, the asset is available for all platforms.
+  </ResponseField>
+  
+  <ResponseField name="md5" type="string" optional>
+    MD5 hash of the file. Returned only if there is a corresponding file uploaded already.
+  </ResponseField>
+  
+  <ResponseField name="signedDownloadUrl" type="string" optional>
+    Pre-signed URL for downloading the asset. Only included if `includeDownloadUrl` is true.
+  </ResponseField>
+  
+  <ResponseField name="signedUploadUrl" type="string" optional>
+    Pre-signed URL for uploading the asset. Only included if `includeUploadUrl` is true.
+  </ResponseField>
+</ResponseField>
+
+#### Example
+
+```typescript
+// List all assets
+const assets = await limrun.assets.list();
+
+for (const asset of assets) {
+  console.log(`${asset.name} (${asset.os || 'all platforms'})`);
+}
+
+// List Android APKs with download URLs
+const androidAssets = await limrun.assets.list({
+  nameFilter: ".apk",
+  includeDownloadUrl: true,
+  limit: 100
+});
+
+// List assets including App Store items
+const allAssets = await limrun.assets.list({
+  includeAppStore: true
+});
+```
+
+---
+
+### get()
+
+Get a specific asset by ID.
+
+```typescript
+get(
+  assetID: string,
+  query?: AssetGetParams,
+  options?: RequestOptions
+): APIPromise<Asset>
+```
+
+#### Parameters
+
+<ParamField path="assetID" type="string" required>
+  The unique identifier of the asset.
+</ParamField>
+
+<ParamField query="includeDownloadUrl" type="boolean" optional>
+  Toggles whether a download URL should be included in the response.
+</ParamField>
+
+<ParamField query="includeUploadUrl" type="boolean" optional>
+  Toggles whether an upload URL should be included in the response.
+</ParamField>
+
+#### Returns
+
+Returns an `Asset` object with the same structure as described in the `list()` method.
+
+#### Example
+
+```typescript
+// Get asset with download URL
+const asset = await limrun.assets.get("asset_123", {
+  includeDownloadUrl: true
+});
+
+console.log(asset.name);
+console.log(asset.md5);
+
+if (asset.signedDownloadUrl) {
+  // Download the asset
+  const response = await fetch(asset.signedDownloadUrl);
+  const buffer = await response.arrayBuffer();
+  await fs.writeFile(`./downloads/${asset.name}`, Buffer.from(buffer));
+}
+```
+
+---
+
+### delete()
+
+Delete an asset by ID.
+
+```typescript
+delete(
+  assetID: string,
+  options?: RequestOptions
+): APIPromise<void>
+```
+
+#### Parameters
+
+<ParamField path="assetID" type="string" required>
+  The unique identifier of the asset to delete.
+</ParamField>
+
+#### Returns
+
+Returns a promise that resolves when the asset is deleted.
+
+#### Example
+
+```typescript
+await limrun.assets.delete("asset_123");
+console.log("Asset deleted successfully");
+```
+
+---
+
+## Type Definitions
+
+### Asset
+
+The complete asset object returned by the API.
+
+```typescript
+interface Asset {
+  id: string;
+  name: string;
+  displayName?: string;
+  os?: 'ios' | 'android';
+  md5?: string;
+  signedDownloadUrl?: string;
+  signedUploadUrl?: string;
+}
+```
+
+### AssetListResponse
+
+Response from listing assets.
+
+```typescript
+type AssetListResponse = Array<Asset>;
+```
+
+### AssetGetOrCreateResponse
+
+Response from creating or retrieving an asset.
+
+```typescript
+interface AssetGetOrCreateResponse {
+  id: string;
+  name: string;
+  signedDownloadUrl: string;
+  signedUploadUrl: string;
+  md5?: string;
+}
+```
+
+### AssetGetOrCreateParams
+
+Parameters for creating or retrieving an asset.
+
+```typescript
+interface AssetGetOrCreateParams {
+  name: string;
+}
+```
+
+### AssetListParams
+
+Parameters for listing assets.
+
+```typescript
+interface AssetListParams {
+  nameFilter?: string;
+  includeAppStore?: boolean;
+  includeDownloadUrl?: boolean;
+  includeUploadUrl?: boolean;
+  limit?: number;
+}
+```
+
+### AssetGetParams
+
+Parameters for retrieving a single asset.
+
+```typescript
+interface AssetGetParams {
+  includeDownloadUrl?: boolean;
+  includeUploadUrl?: boolean;
+}
+```
+
+---
+
+## Usage Patterns
+
+### Uploading a New Asset
+
+```typescript
+// Step 1: Create or get the asset
+const asset = await limrun.assets.getOrCreate({
+  name: "my-ios-app.ipa"
+});
+
+// Step 2: Check if upload is needed
+if (!asset.md5) {
+  // Step 3: Upload the file
+  const fileBuffer = await fs.readFile("./build/my-ios-app.ipa");
+  
+  const uploadResponse = await fetch(asset.signedUploadUrl, {
+    method: "PUT",
+    body: fileBuffer,
+    headers: {
+      "Content-Type": "application/octet-stream"
+    }
+  });
+  
+  if (!uploadResponse.ok) {
+    throw new Error("Failed to upload asset");
+  }
+  
+  console.log("Asset uploaded:", asset.id);
+} else {
+  console.log("Asset already exists, skipping upload");
+}
+```
+
+### Using Assets with Instances
+
+```typescript
+// Create an Android instance with multiple assets
+const instance = await limrun.androidInstances.create({
+  wait: true,
+  spec: {
+    initialAssets: [
+      {
+        kind: "App",
+        source: "AssetName",
+        assetName: "my-app.apk"
+      },
+      {
+        kind: "Configuration",
+        source: "AssetName",
+        assetName: "test-config.json"
+      }
+    ]
+  }
+});
+```
+
+### Downloading an Asset
+
+```typescript
+// Get asset with download URL
+const asset = await limrun.assets.get("asset_123", {
+  includeDownloadUrl: true
+});
+
+if (asset.signedDownloadUrl) {
+  const response = await fetch(asset.signedDownloadUrl);
+  const arrayBuffer = await response.arrayBuffer();
+  await fs.writeFile(`./downloads/${asset.name}`, Buffer.from(arrayBuffer));
+  console.log(`Downloaded ${asset.name}`);
+}
+```

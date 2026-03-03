@@ -1,0 +1,364 @@
+---
+title: iOS Hot Reload
+description: Continuously sync iOS app changes with efficient binary patching and live log streaming
+---
+
+This example demonstrates Limrun's `syncApp` function for continuous app development. It syncs an iOS app folder to a remote instance using efficient binary diffing, reloads the app, and streams logs in real-time - similar to developing locally with Xcode.
+
+## What This Example Does
+
+1. Creates an iOS instance
+2. Uploads an iOS app bundle to the instance
+3. Installs and launches the app
+4. Watches for local file changes (in watch mode)
+5. Sends only changed bytes using xdelta3 patches
+6. Reloads the app automatically
+7. Streams app logs and system logs
+
+## Efficiency
+
+For example, a native Swift app with a 25MB binary has a string change:
+
+- **Traditional**: Re-upload entire 25MB
+- **Limrun syncApp**: Send only 1KB patch, applied in milliseconds
+
+## Prerequisites
+
+### Install xdelta3
+
+```bash
+brew install xdelta
+```
+
+### Set API Key
+
+```bash
+export LIM_API_KEY=lim_...
+```
+
+### Build Your iOS App
+
+Build your app for the iOS simulator:
+
+```bash
+export XCODEPROJ_NAME=sample-native-app.xcodeproj
+export XCODE_TARGET_NAME=sample-native-app
+
+xcodebuild -project ${XCODEPROJ_NAME} \
+  -scheme ${XCODE_TARGET_NAME} \
+  -sdk iphonesimulator \
+  -configuration Debug \
+  -derivedDataPath build \
+  build
+
+export APP_DIR=$(pwd)/build/Build/Products/Debug-iphonesimulator/${XCODE_TARGET_NAME}.app
+```
+
+## Running the Example
+
+### One-Time Sync
+
+Sync the app once without watching for changes:
+
+```bash
+cd examples/ios-hot-reload
+yarn install
+yarn run start /path/to/YourApp.app
+```
+
+### Continuous Sync (Watch Mode)
+
+Continuously sync changes as you rebuild:
+
+```bash
+yarn run start --watch /path/to/YourApp.app
+```
+
+Every time you run `xcodebuild`, it will:
+1. Calculate the byte diff
+2. Send patches to the instance
+3. Apply patches
+4. Relaunch the app
+
+Press Ctrl+C to stop watching.
+
+## Complete Example Code
+
+```typescript
+import { Limrun, Ios } from '@limrun/api';
+
+const args = new Set(process.argv.slice(2));
+const folderArg = process.argv.find((arg, idx) => idx > 1 && !arg.startsWith('-'));
+
+const appPath = folderArg;
+if (!appPath) {
+  console.error('Error: Missing required folder path. Pass as first argument.');
+  process.exit(1);
+}
+
+const watch = args.has('--watch') || args.has('-w');
+
+if (!process.env['LIM_API_KEY']) {
+  console.error('Error: Missing required environment variables (LIM_API_KEY).');
+  process.exit(1);
+}
+
+const lim = new Limrun({ apiKey: process.env['LIM_API_KEY'] });
+
+// Create iOS instance
+const instance = await lim.iosInstances.create({
+  wait: true,
+  reuseIfExists: true,
+  metadata: {
+    labels: {
+      name: 'ios-hot-reload-example',
+    },
+  },
+});
+
+if (!instance.status.apiUrl) {
+  throw new Error('API URL is missing');
+}
+
+console.log(
+  `You can access the instance at https://console.limrun.com/stream/${instance.metadata.id}`
+);
+
+// Create instance client
+const ios = await Ios.createInstanceClient({
+  apiUrl: instance.status.apiUrl,
+  token: instance.status.token,
+});
+
+// Sync app folder
+console.log(`Setting up the sync for app folder at ${appPath}.`);
+const result = await ios.syncApp(appPath, {
+  watch,
+  launchMode: 'RelaunchIfRunning',
+});
+
+if (watch) {
+  console.log(`App folder is continuously syncing now. Press Ctrl+C to stop.`);
+} else {
+  console.log(`App folder synced once. Re-run with --watch to keep syncing on changes.`);
+}
+
+if (!result.installedBundleId) {
+  throw new Error('Installed bundle ID is missing');
+}
+console.log(`Installed bundle ID: ${result.installedBundleId}`);
+const bundleId = result.installedBundleId;
+
+// Stream app logs for 30 seconds
+await new Promise<void>((resolve) => {
+  console.log('Streaming app logs for 30 seconds...');
+  const logStream = ios.streamAppLog(bundleId);
+  logStream.on('line', (line) => {
+    console.log(`[app-log] ${line}`);
+  });
+  logStream.on('error', (error) => {
+    console.error('Failed to fetch app logs:', error);
+  });
+  setTimeout(() => {
+    logStream.stop();
+    console.log('Stopped app log streaming after 30 seconds.');
+    resolve();
+  }, 30000);
+});
+
+// Stream system logs for 30 seconds
+await new Promise<void>((resolve) => {
+  console.log("Streaming syslog that contains your app's bundle ID for 30 seconds...");
+  const syslog = ios.streamSyslog();
+  syslog.on('line', (line) => {
+    if (!line.includes(bundleId)) {
+      return;
+    }
+    console.log(`[syslog] ${line}`);
+  });
+  syslog.on('error', (error) => {
+    console.error('Failed to fetch syslog:', error);
+  });
+  setTimeout(() => {
+    syslog.stop();
+    console.log('Stopped syslog streaming after 30 seconds.');
+    resolve();
+  }, 30000);
+});
+
+// Fetch last 10 lines of app logs
+console.log('Fetching last 10 lines of app logs...');
+const appLogs = await ios.appLogTail(bundleId, 10);
+console.log(appLogs);
+
+if (watch) {
+  console.log('Continuing to watch for changes...');
+  process.on('SIGINT', () => {
+    result.stopWatching?.();
+    ios.disconnect();
+    process.exit(0);
+  });
+} else {
+  ios.disconnect();
+}
+```
+
+## How It Works
+
+### Binary Diffing with xdelta3
+
+The `syncApp` function uses the xdelta3 algorithm to calculate binary diffs:
+
+1. Reads current app bundle files
+2. Compares with previously synced version
+3. Generates compact patches for changed files
+4. Sends only patches over the network
+5. Server applies patches to reconstruct files
+
+### Launch Modes
+
+The `launchMode` parameter controls app behavior:
+
+```typescript
+await ios.syncApp(appPath, {
+  watch,
+  launchMode: 'RelaunchIfRunning', // Restart app if it's running
+});
+```
+
+Available modes:
+- `RelaunchIfRunning` - Restart app after sync if it was running
+- `ForegroundIfRunning` - Bring app to foreground without restart
+- `None` - Just sync files, don't touch app state
+
+### Watch Mode
+
+In watch mode, the SDK monitors the app folder for changes:
+
+```typescript
+const result = await ios.syncApp(appPath, { watch: true });
+
+// Stop watching later
+result.stopWatching?.();
+```
+
+OS-specific file system watchers detect changes and trigger automatic syncs.
+
+### Log Streaming
+
+The example demonstrates three log streaming methods:
+
+#### App Logs (Live Stream)
+
+```typescript
+const logStream = ios.streamAppLog(bundleId);
+logStream.on('line', (line) => {
+  console.log(`[app-log] ${line}`);
+});
+logStream.on('error', (error) => {
+  console.error('Failed to fetch app logs:', error);
+});
+logStream.stop(); // Stop streaming when done
+```
+
+#### System Logs (Live Stream)
+
+```typescript
+const syslog = ios.streamSyslog();
+syslog.on('line', (line) => {
+  if (line.includes(bundleId)) {
+    console.log(`[syslog] ${line}`);
+  }
+});
+syslog.stop();
+```
+
+#### Historical Logs
+
+```typescript
+const appLogs = await ios.appLogTail(bundleId, 10);
+console.log(appLogs); // Last 10 lines
+```
+
+## Development Workflow
+
+### Initial Setup
+
+1. Build your iOS app for simulator
+2. Start the sync in watch mode
+3. Open the instance in Limrun Console to see your app
+
+### Iterative Development
+
+1. Make code changes in Xcode
+2. Build the app (`Cmd+B` or `xcodebuild`)
+3. Watch the terminal for sync progress
+4. See app reload automatically in the instance
+5. Monitor logs in real-time
+
+### Debugging
+
+Use the log streams to debug without Xcode:
+
+- `streamAppLog()` - Your app's console output
+- `streamSyslog()` - System-level events and crashes
+- `appLogTail()` - Quick snapshot of recent logs
+
+## Performance
+
+### Sync Speed
+
+For typical development changes:
+
+- **String/code change**: ~100ms (1-2KB patch)
+- **Asset update**: ~500ms (depends on asset size)
+- **Full binary rebuild**: ~2-3s (full upload fallback)
+
+### Network Efficiency
+
+- Only changed files are processed
+- Only changed bytes within files are sent
+- Compression applied to patches
+
+## Use Cases
+
+- **Remote iOS Development**: Develop iOS apps on Windows/Linux
+- **Team Sharing**: Share live app state with teammates
+- **CI/CD Testing**: Rapid iteration on simulator tests
+- **App Debugging**: Access logs without USB connection
+
+## Troubleshooting
+
+### xdelta3 Not Found
+
+```bash
+brew install xdelta
+```
+
+### App Doesn't Reload
+
+Make sure `launchMode` is set correctly:
+
+```typescript
+launchMode: 'RelaunchIfRunning'
+```
+
+### Slow Syncs
+
+First sync is always full upload. Subsequent syncs should be fast. If not:
+
+- Check network connection
+- Verify xdelta3 is installed
+- Try rebuilding from clean state
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="iOS Instance Client" icon="mobile" href="/api-reference/ios-client">
+    Explore all iOS instance client methods
+  </Card>
+  
+  <Card title="Xcode Sandbox" icon="cube" href="/guides/xcode-sandbox">
+    Learn about Xcode sandbox and hot reload
+  </Card>
+</CardGroup>

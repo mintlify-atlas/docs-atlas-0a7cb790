@@ -1,0 +1,301 @@
+---
+title: "TCP Tunnel"
+description: "Create persistent TCP to WebSocket tunnels"
+---
+
+## startTcpTunnel()
+
+Starts a persistent TCP → WebSocket proxy.
+
+The function creates a local TCP server that listens on an ephemeral port on 127.0.0.1. When a TCP client connects, it forwards all traffic between that client and `remoteURL` through an authenticated WebSocket. The server remains active even after the client disconnects, allowing reconnection without recreating the tunnel.
+
+```typescript
+import { startTcpTunnel } from 'limrun';
+
+const tunnel = await startTcpTunnel(
+  'wss://example.com/instance',
+  'your-token',
+  '127.0.0.1',
+  0,
+  { mode: 'singleton' }
+);
+
+console.log(`Tunnel listening on ${tunnel.address.address}:${tunnel.address.port}`);
+
+// Close the tunnel when done
+tunnel.close();
+```
+
+### Parameters
+
+<ParamField path="remoteURL" type="string" required>
+  Remote WebSocket endpoint (e.g. wss://example.com/instance)
+</ParamField>
+
+<ParamField path="token" type="string" required>
+  Bearer token sent as `Authorization` header
+</ParamField>
+
+<ParamField path="hostname" type="string" required>
+  IP address to listen on. Use '127.0.0.1' for localhost.
+</ParamField>
+
+<ParamField path="port" type="number" required>
+  Port number to listen on. Use 0 to ask Node.js to find an available non-privileged port.
+</ParamField>
+
+<ParamField path="options" type="TcpTunnelOptions">
+  Tunnel configuration options
+  
+  <ParamField path="maxReconnectAttempts" type="number" default={6}>
+    Maximum number of reconnection attempts
+  </ParamField>
+  
+  <ParamField path="reconnectDelay" type="number" default={1000}>
+    Initial reconnection delay in milliseconds
+  </ParamField>
+  
+  <ParamField path="maxReconnectDelay" type="number" default={30000}>
+    Maximum reconnection delay in milliseconds
+  </ParamField>
+  
+  <ParamField path="logLevel" type="LogLevel" default="info">
+    Controls logging verbosity. One of: `'none'`, `'error'`, `'warn'`, `'info'`, `'debug'`
+  </ParamField>
+  
+  <ParamField path="mode" type="TunnelMode" default="singleton">
+    Tunnel mode for handling TCP connections:
+    - `'singleton'`: Single TCP connection forwarded to WebSocket (default)
+    - `'multiplexed'`: Multiple TCP connections multiplexed over a single WebSocket, each packet prefixed with a 4-byte connection ID
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="tunnel" type="Promise<Tunnel>">
+  A promise that resolves to a Tunnel object
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+```typescript Singleton Mode (Default)
+// Single TCP connection at a time
+const tunnel = await startTcpTunnel(
+  'wss://example.com/adb',
+  token,
+  '127.0.0.1',
+  0,
+  { mode: 'singleton' }
+);
+
+console.log(`ADB tunnel at localhost:${tunnel.address.port}`);
+```
+
+```typescript Multiplexed Mode
+// Multiple concurrent TCP connections
+const tunnel = await startTcpTunnel(
+  'wss://example.com/adb',
+  token,
+  '127.0.0.1',
+  0,
+  { mode: 'multiplexed' }
+);
+
+// Multiple clients can connect simultaneously
+```
+
+```typescript Connection State Monitoring
+const tunnel = await startTcpTunnel(
+  remoteURL,
+  token,
+  '127.0.0.1',
+  0
+);
+
+const unregister = tunnel.onConnectionStateChange((state) => {
+  console.log(`Tunnel state: ${state}`);
+  // States: 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
+});
+
+// Stop monitoring
+unregister();
+```
+
+```typescript Custom Reconnection Settings
+const tunnel = await startTcpTunnel(
+  remoteURL,
+  token,
+  '127.0.0.1',
+  5000, // Fixed port
+  {
+    maxReconnectAttempts: 10,
+    reconnectDelay: 500,
+    maxReconnectDelay: 60000,
+    logLevel: 'debug',
+  }
+);
+```
+</CodeGroup>
+
+---
+
+## Tunnel
+
+Represents an active TCP tunnel.
+
+### Properties
+
+<ResponseField name="address" type="{ address: string; port: number }">
+  The local address and port the tunnel is listening on
+  
+  <ResponseField name="address" type="string">
+    IP address (e.g. '127.0.0.1')
+  </ResponseField>
+  
+  <ResponseField name="port" type="number">
+    Port number
+  </ResponseField>
+</ResponseField>
+
+### Methods
+
+#### close()
+
+Close the tunnel and stop accepting connections.
+
+```typescript
+tunnel.close();
+```
+
+#### getConnectionState()
+
+Get current WebSocket connection state.
+
+```typescript
+const state = tunnel.getConnectionState();
+console.log(state); // 'connected'
+```
+
+<ResponseField name="state" type="TunnelConnectionState">
+  One of: `'connecting'`, `'connected'`, `'disconnected'`, `'reconnecting'`
+</ResponseField>
+
+#### onConnectionStateChange()
+
+Register callback for WebSocket connection state changes.
+
+```typescript
+const unregister = tunnel.onConnectionStateChange((state) => {
+  console.log(`State changed to: ${state}`);
+});
+
+// Unregister when done
+unregister();
+```
+
+<ParamField path="callback" type="TunnelConnectionStateCallback" required>
+  Callback function called when connection state changes
+  
+  ```typescript
+  (state: TunnelConnectionState) => void
+  ```
+</ParamField>
+
+<ResponseField name="unregister" type="() => void">
+  A function to unregister the callback
+</ResponseField>
+
+---
+
+## Tunnel Modes
+
+### Singleton Mode
+
+In singleton mode (default), the tunnel accepts one TCP connection at a time. Each connection gets its own WebSocket session.
+
+**Use cases:**
+- ADB connections
+- SSH tunnels
+- Simple proxying scenarios
+
+**Behavior:**
+- Only one TCP client can connect at a time
+- New connections are rejected while an existing connection is active
+- WebSocket reconnects automatically on network issues
+- TCP connection is maintained across WebSocket reconnects using a session ID
+
+### Multiplexed Mode
+
+In multiplexed mode, multiple TCP connections are multiplexed over a single WebSocket connection. Each TCP connection is assigned a unique 32-bit connection ID, and all data is prefixed with a 4-byte big-endian header.
+
+**Use cases:**
+- Multiple simultaneous connections
+- Scenarios where WebSocket connection overhead matters
+- High-throughput applications
+
+**Behavior:**
+- Multiple TCP clients can connect simultaneously
+- All connections share a single WebSocket
+- Each packet is prefixed with a 4-byte connection ID header
+- Close signals are sent as header-only packets (4 bytes, no payload)
+
+**Protocol:**
+```
+┌─────────────┬─────────────────────┐
+│ Connection  │      Payload        │
+│ ID (4 bytes)│   (variable length) │
+└─────────────┴─────────────────────┘
+```
+
+---
+
+## Types
+
+### TcpTunnelOptions
+
+```typescript
+interface TcpTunnelOptions {
+  maxReconnectAttempts?: number; // default: 6
+  reconnectDelay?: number; // default: 1000
+  maxReconnectDelay?: number; // default: 30000
+  logLevel?: LogLevel; // default: 'info'
+  mode?: TunnelMode; // default: 'singleton'
+}
+```
+
+Configuration options for TCP tunnel.
+
+### TunnelMode
+
+```typescript
+type TunnelMode = 'singleton' | 'multiplexed';
+```
+
+Tunnel mode for TCP connections:
+- `'singleton'`: Single TCP connection forwarded to WebSocket (default)
+- `'multiplexed'`: Multiple TCP connections multiplexed over a single WebSocket
+
+### TunnelConnectionState
+
+```typescript
+type TunnelConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
+```
+
+Connection state of the tunnel's WebSocket.
+
+### TunnelConnectionStateCallback
+
+```typescript
+type TunnelConnectionStateCallback = (state: TunnelConnectionState) => void;
+```
+
+Callback function for tunnel connection state changes.
+
+### LogLevel
+
+```typescript
+type LogLevel = 'none' | 'error' | 'warn' | 'info' | 'debug';
+```
+
+Controls the verbosity of logging in the tunnel.

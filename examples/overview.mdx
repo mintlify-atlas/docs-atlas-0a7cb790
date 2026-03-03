@@ -1,0 +1,88 @@
+---
+title: Examples Overview
+description: Complete examples demonstrating Limrun SDK features and integrations
+---
+
+The Limrun SDK includes several complete, runnable examples that demonstrate different use cases and integrations. Each example includes full source code and detailed instructions.
+
+## Available Examples
+
+<CardGroup cols={2}>
+  <Card title="Appium iOS Automation" icon="mobile" href="/examples/appium-ios">
+    Automate iOS simulators using Appium and WebDriverAgent from any platform, including Linux CI runners.
+  </Card>
+  
+  <Card title="Playwright Android" icon="browser" href="/examples/playwright">
+    Automate Android Chrome and WebViews using Playwright with low-latency CDP connections.
+  </Card>
+  
+  <Card title="Full-Stack Integration" icon="layer-group" href="/examples/fullstack-app">
+    Complete React + Express application showing backend instance management and frontend streaming.
+  </Card>
+  
+  <Card title="iOS Hot Reload" icon="sync" href="/examples/ios-hot-reload">
+    Continuously sync iOS app changes with efficient binary patching and live log streaming.
+  </Card>
+</CardGroup>
+
+## Running the Examples
+
+All examples are located in the `examples/` directory of the SDK repository.
+
+### Prerequisites
+
+1. **Get your API key** from [Limrun Console Settings](https://console.limrun.com/settings)
+
+2. **Set environment variable**:
+   ```bash
+   export LIM_API_KEY="lim_..."
+   ```
+
+3. **Install dependencies** for the specific example:
+   ```bash
+   cd examples/<example-name>
+   yarn install
+   ```
+
+### General Structure
+
+Each example follows a consistent structure:
+
+- `index.ts` - Main example code
+- `package.json` - Dependencies and scripts
+- `README.md` - Specific instructions and background
+- `tsconfig.json` - TypeScript configuration
+
+### Running an Example
+
+Most examples can be run with:
+
+```bash
+yarn run start
+```
+
+Some examples may require additional setup (like installing Appium or building an iOS app). Check the specific example documentation for details.
+
+## Example Categories
+
+### Automation Testing
+
+- **Appium iOS** - Native app and Safari browser automation
+- **Playwright Android** - Chrome and WebView automation with CDP
+
+### Development Workflows
+
+- **iOS Hot Reload** - Efficient app development with live updates
+- **Full-Stack App** - Embedding instances in your application
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api-reference/client">
+    Explore the complete API documentation
+  </Card>
+  
+  <Card title="Guides" icon="book" href="/guides/android-instances">
+    Learn core concepts and best practices
+  </Card>
+</CardGroup>

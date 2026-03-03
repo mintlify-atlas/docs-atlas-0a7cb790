@@ -1,0 +1,334 @@
+---
+title: 'TCP Tunneling'
+description: 'Create persistent TCP-to-WebSocket tunnels for ADB and other protocols'
+---
+
+## Overview
+
+The `startTcpTunnel` function creates a persistent TCP server that forwards traffic to a remote WebSocket endpoint. This is essential for ADB connections and other TCP-based protocols.
+
+## Basic Usage
+
+Create a tunnel to connect ADB or other tools:
+
+```typescript
+import { startTcpTunnel } from '@limrun/api';
+
+const tunnel = await startTcpTunnel(
+  'wss://example.com/adb',
+  'your-auth-token',
+  '127.0.0.1',
+  0, // 0 = use any available port
+);
+
+console.log('Tunnel listening on:', tunnel.address.port);
+
+// Use the tunnel with adb
+// adb connect 127.0.0.1:<port>
+
+// Close when done
+tunnel.close();
+```
+
+## Tunnel Modes
+
+The tunnel supports two modes for handling TCP connections:
+
+### Singleton Mode (Default)
+
+Single TCP connection forwarded to WebSocket:
+
+```typescript
+const tunnel = await startTcpTunnel(
+  remoteUrl,
+  token,
+  '127.0.0.1',
+  0,
+  {
+    mode: 'singleton',
+  }
+);
+```
+
+- One active TCP connection at a time
+- New connections rejected while one is active
+- WebSocket reconnects automatically if disconnected
+- Session ID maintained across reconnects
+
+<Note>
+  Singleton mode is ideal for ADB connections where only one client should be connected at a time.
+</Note>
+
+### Multiplexed Mode
+
+Multiple TCP connections over a single WebSocket:
+
+```typescript
+const tunnel = await startTcpTunnel(
+  remoteUrl,
+  token,
+  '127.0.0.1',
+  0,
+  {
+    mode: 'multiplexed',
+  }
+);
+```
+
+- Multiple concurrent TCP connections
+- Each connection gets a unique 32-bit ID
+- All data prefixed with 4-byte connection header
+- Close signal sent as header-only packet
+
+<Note>
+  Multiplexed mode is useful when multiple clients need simultaneous access to the same service.
+</Note>
+
+## Connection State Monitoring
+
+Monitor the WebSocket connection state:
+
+```typescript
+const tunnel = await startTcpTunnel(remoteUrl, token, '127.0.0.1', 0);
+
+// Get current state
+const state = tunnel.getConnectionState();
+console.log('Current state:', state);
+// 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
+
+// Listen for state changes
+const unsubscribe = tunnel.onConnectionStateChange((state) => {
+  console.log('Connection state changed:', state);
+  
+  if (state === 'connected') {
+    console.log('Tunnel is ready to use');
+  } else if (state === 'disconnected') {
+    console.log('Tunnel is offline');
+  }
+});
+
+// Stop listening
+unsubscribe();
+```
+
+## Automatic Reconnection
+
+Tunnels automatically reconnect with exponential backoff:
+
+```typescript
+const tunnel = await startTcpTunnel(
+  remoteUrl,
+  token,
+  '127.0.0.1',
+  0,
+  {
+    maxReconnectAttempts: 6,      // Default: 6
+    reconnectDelay: 1000,         // Default: 1000ms
+    maxReconnectDelay: 30000,     // Default: 30000ms
+  }
+);
+```
+
+### Reconnection Behavior
+
+- Initial delay: 1 second
+- Delay doubles after each failed attempt
+- Maximum delay: 30 seconds
+- After max attempts, tunnel gives up
+- TCP socket paused during reconnection (backpressure applied)
+- TCP socket resumed when reconnected
+
+### Non-Retryable Errors
+
+4xx HTTP errors (401, 403, 404) won't trigger reconnection:
+
+```typescript
+tunnel.onConnectionStateChange((state) => {
+  if (state === 'disconnected') {
+    const currentState = tunnel.getConnectionState();
+    if (currentState === 'disconnected') {
+      console.log('Permanent failure - check credentials');
+    }
+  }
+});
+```
+
+## Logging
+
+Control tunnel verbosity:
+
+```typescript
+const tunnel = await startTcpTunnel(
+  remoteUrl,
+  token,
+  '127.0.0.1',
+  0,
+  {
+    logLevel: 'debug', // 'none' | 'error' | 'warn' | 'info' | 'debug'
+  }
+);
+```
+
+Log levels:
+- `none`: No logging
+- `error`: Only errors
+- `warn`: Warnings and errors
+- `info`: General info, warnings, and errors (default)
+- `debug`: All messages including connection details
+
+## ADB Tunnel Example
+
+Complete example connecting ADB to an Android instance:
+
+<Steps>
+  <Step title="Create an Android Instance">
+    ```typescript
+    import Limrun from '@limrun/api';
+    import { createInstanceClient } from '@limrun/api';
+
+    const client = new Limrun({
+      apiKey: process.env.LIM_API_KEY,
+    });
+
+    const instance = await client.androidInstances.create({
+      wait: true,
+    });
+    ```
+  </Step>
+
+  <Step title="Create Instance Client and Start Tunnel">
+    ```typescript
+    const instanceClient = await createInstanceClient({
+      adbUrl: instance.status.adbWebSocketUrl!,
+      endpointUrl: instance.status.endpointWebSocketUrl!,
+      token: instance.status.token,
+    });
+
+    const tunnel = await instanceClient.startAdbTunnel();
+    console.log('ADB tunnel ready on port:', tunnel.address.port);
+    ```
+  </Step>
+
+  <Step title="Use ADB Commands">
+    ```typescript
+    import { exec } from 'child_process';
+    import { promisify } from 'util';
+
+    const execAsync = promisify(exec);
+
+    // ADB is already connected by startAdbTunnel()
+    
+    // List devices
+    const { stdout } = await execAsync('adb devices');
+    console.log('Connected devices:', stdout);
+
+    // Install APK
+    await execAsync('adb install app.apk');
+
+    // Run shell command
+    const { stdout: result } = await execAsync(
+      'adb shell pm list packages'
+    );
+    console.log('Installed packages:', result);
+    ```
+  </Step>
+
+  <Step title="Clean Up">
+    ```typescript
+    tunnel.close();
+    instanceClient.disconnect();
+    await client.androidInstances.delete(instance.metadata.id);
+    ```
+  </Step>
+</Steps>
+
+## Advanced: Session Persistence
+
+In singleton mode, the tunnel maintains a session ID across reconnects:
+
+```typescript
+// When WebSocket disconnects
+// 1. TCP socket is paused (backpressure)
+// 2. Reconnection is scheduled
+// 3. Session ID is passed to server on reconnect
+// 4. Server resumes the same ADB session
+// 5. TCP socket is resumed
+// 6. Queued data flows through
+```
+
+This ensures ADB connections survive temporary network issues.
+
+## Advanced: Multiplexed Protocol
+
+In multiplexed mode, each message is framed with a 4-byte header:
+
+```typescript
+import { encodeConnectionHeader, decodeConnectionHeader } from '@limrun/api';
+
+// Encoding (client to server)
+const connId = 42;
+const data = Buffer.from('hello');
+const header = encodeConnectionHeader(connId); // 4 bytes, big-endian
+const frame = Buffer.concat([header, data]);
+
+// Decoding (server to client)
+const receivedFrame = Buffer.from(/* ... */);
+const receivedId = decodeConnectionHeader(receivedFrame); // Read first 4 bytes
+const payload = receivedFrame.subarray(4);
+
+// Close signal (header only, no payload)
+const closeSignal = encodeConnectionHeader(connId); // 4 bytes, no data
+```
+
+## Error Handling
+
+<CodeGroup>
+```typescript Handle Connection Errors
+const tunnel = await startTcpTunnel(
+  remoteUrl,
+  token,
+  '127.0.0.1',
+  0,
+  { logLevel: 'error' }
+);
+
+tunnel.onConnectionStateChange((state) => {
+  if (state === 'disconnected') {
+    console.error('Tunnel disconnected');
+  } else if (state === 'reconnecting') {
+    console.warn('Tunnel reconnecting...');
+  } else if (state === 'connected') {
+    console.log('Tunnel reconnected successfully');
+  }
+});
+```
+
+```typescript Timeout on Creation
+try {
+  const tunnel = await Promise.race([
+    startTcpTunnel(remoteUrl, token, '127.0.0.1', 0),
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout')), 10000)
+    ),
+  ]);
+} catch (err) {
+  console.error('Failed to create tunnel:', err);
+}
+```
+
+```typescript Graceful Shutdown
+process.on('SIGINT', () => {
+  console.log('Shutting down tunnel...');
+  tunnel.close();
+  process.exit(0);
+});
+```
+</CodeGroup>
+
+<Tip>
+  Monitor connection state changes to implement custom retry logic or UI updates.
+</Tip>
+
+<Warning>
+  Always call `tunnel.close()` when done to free up the local TCP port and close the WebSocket connection.
+</Warning>

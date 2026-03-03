@@ -1,0 +1,219 @@
+---
+title: 'Logging'
+description: 'Configure log levels and custom loggers for debugging and monitoring'
+---
+
+The Limrun SDK provides comprehensive logging capabilities to help you debug API requests and monitor your application's behavior.
+
+<Warning>
+  All log messages are intended for debugging only. The format and content of log messages may change between releases.
+</Warning>
+
+## Log Levels
+
+The SDK supports five log levels, from most to least verbose:
+
+- `'debug'` - Show all messages including HTTP request/response details
+- `'info'` - Show informational messages, warnings, and errors
+- `'warn'` - Show warnings and errors (default)
+- `'error'` - Show only errors
+- `'off'` - Disable all logging
+
+### Setting the Log Level
+
+You can configure the log level in two ways:
+
+<Tabs>
+  <Tab title="Client Option">
+    Set the `logLevel` option when creating the client:
+
+    ```typescript
+    import Limrun from '@limrun/api';
+
+    const client = new Limrun({
+      apiKey: process.env.LIM_API_KEY,
+      logLevel: 'debug', // Show all log messages
+    });
+    ```
+  </Tab>
+  <Tab title="Environment Variable">
+    Set the `LIMRUN_LOG` environment variable:
+
+    ```bash
+    export LIMRUN_LOG=debug
+    ```
+
+    ```typescript
+    import Limrun from '@limrun/api';
+
+    // Reads from LIMRUN_LOG environment variable
+    const client = new Limrun({
+      apiKey: process.env.LIM_API_KEY,
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  The `logLevel` client option takes precedence over the `LIMRUN_LOG` environment variable.
+</Note>
+
+## Debug Logging
+
+At the `'debug'` level, all HTTP requests and responses are logged, including headers and bodies:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  logLevel: 'debug',
+});
+
+const instance = await client.androidInstances.create();
+```
+
+**Example debug output:**
+
+```
+[log_a1b2c3] sending request POST https://api.limrun.com/android-instances
+[log_a1b2c3] POST https://api.limrun.com/android-instances succeeded with status 200 in 342ms
+[log_a1b2c3] response start
+```
+
+<Warning>
+  While authentication headers are redacted, sensitive data in request and response bodies may still be visible at the `debug` level. Use caution in production environments.
+</Warning>
+
+## Custom Logger
+
+By default, the SDK logs to `globalThis.console`. You can provide a custom logger that implements the standard logging interface.
+
+The SDK is compatible with popular logging libraries including:
+
+- [pino](https://www.npmjs.com/package/pino)
+- [winston](https://www.npmjs.com/package/winston)
+- [bunyan](https://www.npmjs.com/package/bunyan)
+- [consola](https://www.npmjs.com/package/consola)
+- [signale](https://www.npmjs.com/package/signale)
+- [@std/log](https://jsr.io/@std/log) (Deno)
+
+### Using Pino
+
+```typescript
+import Limrun from '@limrun/api';
+import pino from 'pino';
+
+const logger = pino({
+  level: 'debug',
+  transport: {
+    target: 'pino-pretty',
+  },
+});
+
+const client = new Limrun({
+  logger: logger.child({ name: 'Limrun' }),
+  logLevel: 'debug', // Send all messages to pino
+});
+```
+
+### Using Winston
+
+```typescript
+import Limrun from '@limrun/api';
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  level: 'debug',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ filename: 'limrun.log' }),
+  ],
+});
+
+const client = new Limrun({
+  logger,
+  logLevel: 'debug',
+});
+```
+
+### Using Consola
+
+```typescript
+import Limrun from '@limrun/api';
+import { createConsola } from 'consola';
+
+const logger = createConsola({
+  level: 4, // debug level
+});
+
+const client = new Limrun({
+  logger,
+  logLevel: 'debug',
+});
+```
+
+## Logger Interface
+
+If you're implementing a custom logger, it must provide these methods:
+
+```typescript
+interface Logger {
+  debug(...args: any[]): void;
+  info(...args: any[]): void;
+  warn(...args: any[]): void;
+  error(...args: any[]): void;
+}
+```
+
+<Note>
+  The `logLevel` option still controls which messages are emitted. Messages below the configured level will not be sent to your custom logger.
+</Note>
+
+## Log Message Format
+
+Log messages include contextual information to help with debugging:
+
+- **Request ID**: Unique identifier for correlating log entries (e.g., `[log_a1b2c3]`)
+- **HTTP Method & URL**: The request being made
+- **Status Code**: Response status
+- **Duration**: Time taken for the request in milliseconds
+- **Retry Information**: Whether the request is a retry
+
+### Retry Logging
+
+When requests are retried, logs include retry information:
+
+```
+[log_a1b2c3] connection failed - retrying, 2 attempts remaining
+[log_d4e5f6, retryOf: log_a1b2c3] sending request
+[log_d4e5f6, retryOf: log_a1b2c3] POST https://api.limrun.com/android-instances succeeded
+```
+
+## Production Recommendations
+
+<Steps>
+  <Step title="Use 'warn' or 'error' in production">
+    The default `'warn'` level is suitable for most production environments. It captures important issues without excessive verbosity.
+  </Step>
+  <Step title="Enable 'debug' only when troubleshooting">
+    Use debug logging temporarily when investigating issues. Remember that it logs request/response bodies which may contain sensitive data.
+  </Step>
+  <Step title="Use structured logging">
+    Consider using a structured logger like pino or winston to enable better log aggregation and analysis in production.
+  </Step>
+  <Step title="Configure log rotation">
+    If logging to files, ensure proper log rotation is configured to prevent disk space issues.
+  </Step>
+</Steps>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/core-concepts/error-handling">
+    Learn about error handling and debugging
+  </Card>
+  <Card title="Retries and Timeouts" icon="rotate" href="/core-concepts/retries-and-timeouts">
+    Configure retry behavior and timeouts
+  </Card>
+</CardGroup>

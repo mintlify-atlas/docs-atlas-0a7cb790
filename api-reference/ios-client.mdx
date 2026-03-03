@@ -1,0 +1,941 @@
+---
+title: iOS Client
+description: API reference for the Limrun iOS instance client
+---
+
+The iOS Client provides comprehensive methods to control and interact with iOS Simulator instances.
+
+## createInstanceClient
+
+Creates a client for interacting with a Limrun iOS instance.
+
+```typescript
+import { createInstanceClient } from '@limrun/ios-client';
+
+const client = await createInstanceClient({
+  apiUrl: 'https://instance.limrun.com',
+  token: 'your-token',
+  logLevel: 'info'
+});
+```
+
+### Parameters
+
+<ParamField path="options" type="InstanceClientOptions" required>
+  Configuration options for the iOS client
+
+  <Expandable title="InstanceClientOptions properties">
+    <ParamField path="apiUrl" type="string" required>
+      The API URL for the instance
+    </ParamField>
+
+    <ParamField path="token" type="string" required>
+      The token to use for authentication
+    </ParamField>
+
+    <ParamField path="logLevel" type="LogLevel" default="info">
+      Controls logging verbosity. One of: `'none'`, `'error'`, `'warn'`, `'info'`, `'debug'`
+    </ParamField>
+
+    <ParamField path="maxReconnectAttempts" type="number" default={6}>
+      Maximum number of reconnection attempts
+    </ParamField>
+
+    <ParamField path="reconnectDelay" type="number" default={1000}>
+      Initial reconnection delay in milliseconds
+    </ParamField>
+
+    <ParamField path="maxReconnectDelay" type="number" default={30000}>
+      Maximum reconnection delay in milliseconds
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+<ResponseField name="client" type="Promise<InstanceClient>">
+  A promise that resolves to an InstanceClient instance with deviceInfo populated
+</ResponseField>
+
+## InstanceClient
+
+The client interface for interacting with an iOS Simulator instance.
+
+### Properties
+
+#### deviceInfo
+
+Device information fetched during client initialization.
+
+```typescript
+console.log(client.deviceInfo);
+// {
+//   udid: 'ABC123-DEF456',
+//   screenWidth: 390,
+//   screenHeight: 844,
+//   model: 'iPhone 14 Pro'
+// }
+```
+
+<ResponseField name="deviceInfo" type="DeviceInfo">
+  <Expandable title="DeviceInfo properties">
+    <ResponseField name="udid" type="string">
+      Device UDID
+    </ResponseField>
+
+    <ResponseField name="screenWidth" type="number">
+      Screen width in points (Swift Double)
+    </ResponseField>
+
+    <ResponseField name="screenHeight" type="number">
+      Screen height in points (Swift Double)
+    </ResponseField>
+
+    <ResponseField name="model" type="string">
+      Device model name (e.g., "iPhone 14 Pro")
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Screen Interaction Methods
+
+#### screenshot
+
+Take a screenshot of the current screen.
+
+```typescript
+const screenshot = await client.screenshot();
+console.log(`Screenshot: ${screenshot.width}x${screenshot.height}`);
+const imageData = Buffer.from(screenshot.base64, 'base64');
+```
+
+<ResponseField name="screenshot" type="Promise<ScreenshotData>">
+  <Expandable title="ScreenshotData properties">
+    <ResponseField name="base64" type="string">
+      Base64-encoded JPEG image data
+    </ResponseField>
+
+    <ResponseField name="width" type="number">
+      Width in points (for tap coordinates)
+    </ResponseField>
+
+    <ResponseField name="height" type="number">
+      Height in points (for tap coordinates)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### tap
+
+Tap at the specified coordinates using the device's native screen dimensions.
+
+```typescript
+await client.tap(195, 422);
+```
+
+<ParamField path="x" type="number" required>
+  X coordinate in points
+</ParamField>
+
+<ParamField path="y" type="number" required>
+  Y coordinate in points
+</ParamField>
+
+#### tapWithScreenSize
+
+Tap at coordinates with explicit screen size. Use this when coordinates are in a different coordinate space than the device's native dimensions.
+
+```typescript
+// Tap at 50% of a 1080x1920 screenshot
+await client.tapWithScreenSize(540, 960, 1080, 1920);
+```
+
+<ParamField path="x" type="number" required>
+  X coordinate in the provided screen coordinate space
+</ParamField>
+
+<ParamField path="y" type="number" required>
+  Y coordinate in the provided screen coordinate space
+</ParamField>
+
+<ParamField path="screenWidth" type="number" required>
+  Width of the coordinate space
+</ParamField>
+
+<ParamField path="screenHeight" type="number" required>
+  Height of the coordinate space
+</ParamField>
+
+#### scroll
+
+Scroll in a direction by a specified number of pixels.
+
+```typescript
+// Scroll down 300 pixels from center
+await client.scroll('down', 300);
+
+// Scroll with custom starting point and momentum
+await client.scroll('up', 500, {
+  coordinate: [195, 400],
+  momentum: 0.8 // Fast scroll with inertia
+});
+```
+
+<ParamField path="direction" type="'up' | 'down' | 'left' | 'right'" required>
+  Direction content moves
+</ParamField>
+
+<ParamField path="pixels" type="number" required>
+  Total pixels to scroll (finger movement distance)
+</ParamField>
+
+<ParamField path="options" type="object">
+  <Expandable title="Scroll options">
+    <ParamField path="coordinate" type="[number, number]">
+      Starting coordinate [x, y]. Defaults to screen center.
+    </ParamField>
+
+    <ParamField path="momentum" type="number">
+      0.0-1.0 controlling scroll speed and inertia. 0 (default) = slow scroll, no momentum. 1 = fastest with max inertia.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### setOrientation
+
+Set the device orientation.
+
+```typescript
+await client.setOrientation('Landscape');
+```
+
+<ParamField path="orientation" type="'Portrait' | 'Landscape'" required>
+  The orientation to set
+</ParamField>
+
+### Accessibility Element Methods
+
+#### elementTree
+
+Get the element tree (accessibility hierarchy) of the current screen.
+
+```typescript
+const tree = await client.elementTree();
+console.log(JSON.parse(tree));
+
+// Get element at specific point
+const elementAtPoint = await client.elementTree({ x: 100, y: 200 });
+```
+
+<ParamField path="point" type="AccessibilityPoint">
+  Optional point to get the element at that specific location
+
+  <Expandable title="AccessibilityPoint properties">
+    <ParamField path="x" type="number" required>
+      X coordinate
+    </ParamField>
+
+    <ParamField path="y" type="number" required>
+      Y coordinate
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="tree" type="Promise<string>">
+  JSON string of the accessibility tree
+</ResponseField>
+
+#### tapElement
+
+Tap an accessibility element by selector.
+
+```typescript
+// Tap by accessibility identifier
+await client.tapElement({ accessibilityId: 'login-button' });
+
+// Tap by label
+await client.tapElement({ label: 'Sign In' });
+
+// Tap by element type and label contains
+await client.tapElement({
+  elementType: 'Button',
+  labelContains: 'continue'
+});
+```
+
+<ParamField path="selector" type="AccessibilitySelector" required>
+  The selector criteria to find the element. All non-undefined fields must match.
+
+  <Expandable title="AccessibilitySelector properties">
+    <ParamField path="accessibilityId" type="string">
+      Match by AXUniqueId (accessibilityIdentifier) - exact match
+    </ParamField>
+
+    <ParamField path="label" type="string">
+      Match by AXLabel - exact match
+    </ParamField>
+
+    <ParamField path="labelContains" type="string">
+      Match by AXLabel - contains (case-insensitive)
+    </ParamField>
+
+    <ParamField path="elementType" type="string">
+      Match by element type/role (e.g., "Button", "TextField") - case-insensitive
+    </ParamField>
+
+    <ParamField path="title" type="string">
+      Match by title - exact match
+    </ParamField>
+
+    <ParamField path="titleContains" type="string">
+      Match by title - contains (case-insensitive)
+    </ParamField>
+
+    <ParamField path="value" type="string">
+      Match by AXValue - exact match
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="result" type="Promise<TapElementResult>">
+  <Expandable title="TapElementResult properties">
+    <ResponseField name="elementLabel" type="string | undefined">
+      Label of the tapped element
+    </ResponseField>
+
+    <ResponseField name="elementType" type="string | undefined">
+      Type of the tapped element
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### incrementElement
+
+Increment an accessibility element (useful for sliders, steppers, etc.).
+
+```typescript
+await client.incrementElement({ accessibilityId: 'volume-slider' });
+```
+
+<ParamField path="selector" type="AccessibilitySelector" required>
+  The selector criteria to find the element
+</ParamField>
+
+<ResponseField name="result" type="Promise<ElementResult>">
+  <Expandable title="ElementResult properties">
+    <ResponseField name="elementLabel" type="string | undefined">
+      Label of the modified element
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### decrementElement
+
+Decrement an accessibility element (useful for sliders, steppers, etc.).
+
+```typescript
+await client.decrementElement({ accessibilityId: 'volume-slider' });
+```
+
+<ParamField path="selector" type="AccessibilitySelector" required>
+  The selector criteria to find the element
+</ParamField>
+
+<ResponseField name="result" type="Promise<ElementResult>">
+  <Expandable title="ElementResult properties">
+    <ResponseField name="elementLabel" type="string | undefined">
+      Label of the modified element
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### setElementValue
+
+Set the value of an accessibility element. This is much faster than typing character by character.
+
+```typescript
+await client.setElementValue('user@example.com', {
+  accessibilityId: 'email-field'
+});
+```
+
+<ParamField path="text" type="string" required>
+  The text value to set
+</ParamField>
+
+<ParamField path="selector" type="AccessibilitySelector" required>
+  The selector criteria to find the element
+</ParamField>
+
+<ResponseField name="result" type="Promise<ElementResult>">
+  <Expandable title="ElementResult properties">
+    <ResponseField name="elementLabel" type="string | undefined">
+      Label of the modified element
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Keyboard Input Methods
+
+#### typeText
+
+Type text into the currently focused input field.
+
+```typescript
+await client.typeText('Hello, World!');
+
+// Type and press Enter
+await client.typeText('search query', true);
+```
+
+<ParamField path="text" type="string" required>
+  The text to type
+</ParamField>
+
+<ParamField path="pressEnter" type="boolean" default={false}>
+  If true, press Enter after typing
+</ParamField>
+
+#### pressKey
+
+Press a key on the keyboard, optionally with modifiers.
+
+```typescript
+// Press Enter
+await client.pressKey('enter');
+
+// Press Command+S
+await client.pressKey('s', ['command']);
+
+// Press Command+Shift+F
+await client.pressKey('f', ['command', 'shift']);
+```
+
+<ParamField path="key" type="string" required>
+  The key to press (e.g., 'a', 'enter', 'backspace', 'up', 'f1')
+</ParamField>
+
+<ParamField path="modifiers" type="string[]">
+  Optional modifier keys (e.g., ['shift'], ['command', 'shift'])
+</ParamField>
+
+#### toggleKeyboard
+
+Toggle the on-screen software keyboard visibility. Equivalent to pressing Cmd+K in the iOS Simulator.
+
+```typescript
+await client.toggleKeyboard();
+```
+
+### App Management Methods
+
+#### launchApp
+
+Launch an installed app by bundle identifier.
+
+```typescript
+// Launch and bring to foreground if already running
+await client.launchApp('com.example.app');
+
+// Terminate and relaunch if already running
+await client.launchApp('com.example.app', 'RelaunchIfRunning');
+```
+
+<ParamField path="bundleId" type="string" required>
+  Bundle identifier of the app to launch
+</ParamField>
+
+<ParamField path="mode" type="'ForegroundIfRunning' | 'RelaunchIfRunning'" default="ForegroundIfRunning">
+  Launch mode:
+  - `'ForegroundIfRunning'`: bring to foreground if already running
+  - `'RelaunchIfRunning'`: terminate and relaunch if already running
+</ParamField>
+
+#### terminateApp
+
+Terminate a running app by bundle identifier. Succeeds silently if the app is not currently running.
+
+```typescript
+await client.terminateApp('com.example.app');
+```
+
+<ParamField path="bundleId" type="string" required>
+  Bundle identifier of the app to terminate
+</ParamField>
+
+#### installApp
+
+Install an app from a URL (supports .ipa or .app files, optionally zipped).
+
+```typescript
+// Basic installation
+const result = await client.installApp('https://example.com/app.ipa');
+console.log(`Installed: ${result.bundleId}`);
+
+// Install with caching and auto-launch
+const result2 = await client.installApp('https://example.com/app.ipa', {
+  md5: 'abc123...', // Skip download if cached version matches
+  launchMode: 'RelaunchIfRunning'
+});
+```
+
+<ParamField path="url" type="string" required>
+  The URL to download the app from
+</ParamField>
+
+<ParamField path="options" type="AppInstallationOptions">
+  <Expandable title="AppInstallationOptions properties">
+    <ParamField path="md5" type="string">
+      MD5 hash for caching - if provided and matches cached version, skips download
+    </ParamField>
+
+    <ParamField path="launchMode" type="'ForegroundIfRunning' | 'RelaunchIfRunning'">
+      Launch mode after installation:
+      - `'ForegroundIfRunning'`: Bring to foreground if already running, otherwise launch
+      - `'RelaunchIfRunning'`: Kill and relaunch if already running
+      - `undefined`: Don't launch after installation
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="result" type="Promise<AppInstallationResult>">
+  <Expandable title="AppInstallationResult properties">
+    <ResponseField name="url" type="string">
+      The URL the app was installed from
+    </ResponseField>
+
+    <ResponseField name="bundleId" type="string">
+      Bundle ID of the installed app
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### listApps
+
+List installed apps on the simulator.
+
+```typescript
+const apps = await client.listApps();
+for (const app of apps) {
+  console.log(`${app.name} (${app.bundleId}) - ${app.installType}`);
+}
+```
+
+<ResponseField name="apps" type="Promise<InstalledApp[]>">
+  <Expandable title="InstalledApp properties">
+    <ResponseField name="bundleId" type="string">
+      Bundle identifier
+    </ResponseField>
+
+    <ResponseField name="name" type="string">
+      App name
+    </ResponseField>
+
+    <ResponseField name="installType" type="string">
+      Installation type
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### syncApp
+
+Sync an iOS app bundle folder to the server and optionally install/launch it.
+
+```typescript
+// Sync and install
+const result = await client.syncApp('/path/to/MyApp.app', {
+  install: true,
+  launchMode: 'RelaunchIfRunning'
+});
+
+// Watch mode for development
+const result2 = await client.syncApp('/path/to/MyApp.app', {
+  install: true,
+  watch: true,
+  maxPatchBytes: 1024 * 1024 // 1MB patch limit
+});
+```
+
+<ParamField path="localAppBundlePath" type="string" required>
+  Path to the local .app bundle
+</ParamField>
+
+<ParamField path="options" type="object">
+  <Expandable title="Sync options">
+    <ParamField path="install" type="boolean" default={false}>
+      Whether to install the app after syncing
+    </ParamField>
+
+    <ParamField path="maxPatchBytes" type="number">
+      Maximum patch size in bytes before falling back to full upload
+    </ParamField>
+
+    <ParamField path="launchMode" type="'ForegroundIfRunning' | 'RelaunchIfRunning'">
+      Launch mode after installation
+    </ParamField>
+
+    <ParamField path="watch" type="boolean" default={false}>
+      Enable watch mode for automatic re-sync on changes
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="result" type="Promise<SyncFolderResult>">
+  Sync operation result
+</ResponseField>
+
+#### openUrl
+
+Open a URL in the simulator. Web URLs open in Safari, deep links open corresponding apps.
+
+```typescript
+// Open web URL
+await client.openUrl('https://example.com');
+
+// Open deep link
+await client.openUrl('myapp://profile/123');
+```
+
+<ParamField path="url" type="string" required>
+  The URL to open
+</ParamField>
+
+### Logging Methods
+
+#### appLogTail
+
+Fetch the last N lines of app logs (combined stdout/stderr).
+
+```typescript
+const logs = await client.appLogTail('com.example.app', 100);
+console.log(logs);
+```
+
+<ParamField path="bundleId" type="string" required>
+  Bundle identifier of the app
+</ParamField>
+
+<ParamField path="lines" type="number" required>
+  Number of lines to return (clamped to server limit)
+</ParamField>
+
+<ResponseField name="logs" type="Promise<string>">
+  The log output
+</ResponseField>
+
+#### streamAppLog
+
+Stream app logs for a bundle ID (batched lines every ~500ms).
+
+```typescript
+const stream = client.streamAppLog('com.example.app');
+
+stream.on('line', (line) => {
+  console.log('[APP]', line);
+});
+
+stream.on('error', (error) => {
+  console.error('Stream error:', error);
+});
+
+// Stop streaming when done
+stream.stop();
+```
+
+<ParamField path="bundleId" type="string" required>
+  Bundle identifier of the app
+</ParamField>
+
+<ResponseField name="stream" type="LogStream">
+  LogStream handle with the following events:
+  - `line`: (line: string) => void - Single log line
+  - `lines`: (lines: string[]) => void - Batch of log lines
+  - `error`: (error: Error) => void - Stream error
+  - `close`: () => void - Stream closed
+
+  Call `.stop()` to unsubscribe and close the stream.
+</ResponseField>
+
+#### streamSyslog
+
+Stream syslog (batched lines every ~500ms).
+
+```typescript
+const stream = client.streamSyslog();
+
+stream.on('line', (line) => {
+  console.log('[SYS]', line);
+});
+
+// Stop when done
+stream.stop();
+```
+
+<ResponseField name="stream" type="LogStream">
+  LogStream handle. See streamAppLog for event details.
+</ResponseField>
+
+### Developer Tool Methods
+
+#### simctl
+
+Run `simctl` command targeting the instance with given arguments. Returns an EventEmitter that streams stdout, stderr, and exit events.
+
+```typescript
+const execution = client.simctl(['boot']);
+
+// Listen to raw data
+execution.on('stdout', (data) => {
+  console.log('stdout:', data.toString());
+});
+
+// Or listen line-by-line
+execution.on('line-stdout', (line) => {
+  console.log('Line:', line);
+});
+
+execution.on('line-stderr', (line) => {
+  console.error('Error:', line);
+});
+
+execution.on('exit', (code) => {
+  console.log('Process exited with code:', code);
+});
+
+// Or wait for completion
+const result = await execution.wait();
+console.log('Exit code:', result.code);
+console.log('Full stdout:', result.stdout);
+
+// Disconnect when command finishes
+const execution2 = client.simctl(['status'], { disconnectOnExit: true });
+```
+
+<ParamField path="args" type="string[]" required>
+  Arguments to pass to simctl
+</ParamField>
+
+<ParamField path="options" type="object">
+  <Expandable title="Simctl options">
+    <ParamField path="disconnectOnExit" type="boolean" default={false}>
+      If true, disconnect from the instance when the command completes
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="execution" type="SimctlExecution">
+  SimctlExecution handle with the following events:
+  - `stdout`: (data: Buffer) => void
+  - `stderr`: (data: Buffer) => void
+  - `line-stdout`: (line: string) => void
+  - `line-stderr`: (line: string) => void
+  - `exit`: (code: number) => void
+  - `error`: (error: Error) => void
+
+  Methods:
+  - `wait()`: Promise that resolves with code, stdout, and stderr
+  - `stop()`: void
+</ResponseField>
+
+#### xcrun
+
+Run `xcrun` command with the given arguments. Returns the complete output once the command finishes (non-streaming).
+
+```typescript
+// Get the SDK version for iphonesimulator
+const result = await client.xcrun(['--sdk', 'iphonesimulator', '--show-sdk-version']);
+console.log('SDK version:', result.stdout.trim());
+
+// Get the SDK build version (default SDK)
+const buildResult = await client.xcrun(['--show-sdk-build-version']);
+console.log('Build version:', buildResult.stdout.trim());
+```
+
+Only the following flags are allowed:
+- `--sdk <value>`: Specify the SDK (e.g., 'iphonesimulator', 'iphoneos')
+- `--show-sdk-version`: Show the SDK version
+- `--show-sdk-build-version`: Show the SDK build version
+- `--show-sdk-platform-version`: Show the SDK platform version
+
+<ParamField path="args" type="string[]" required>
+  Arguments to pass to xcrun
+</ParamField>
+
+<ResponseField name="result" type="Promise<CommandResult>">
+  <Expandable title="CommandResult properties">
+    <ResponseField name="stdout" type="string">
+      Standard output from the command
+    </ResponseField>
+
+    <ResponseField name="stderr" type="string">
+      Standard error from the command
+    </ResponseField>
+
+    <ResponseField name="exitCode" type="number">
+      Exit code of the command
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### xcodebuild
+
+Run `xcodebuild` command with the given arguments. Only `-version` is allowed.
+
+```typescript
+const result = await client.xcodebuild(['-version']);
+console.log('Xcode version:', result.stdout);
+// Output: Xcode 16.0
+//         Build version 16A242d
+```
+
+<ParamField path="args" type="string[]" required>
+  Arguments to pass to xcodebuild (only `['-version']` is allowed)
+</ParamField>
+
+<ResponseField name="result" type="Promise<CommandResult>">
+  See xcrun for CommandResult properties
+</ResponseField>
+
+#### cp
+
+Copy a file to the sandbox of the simulator. Returns the path of the file that can be used in simctl commands.
+
+```typescript
+const remotePath = await client.cp('test-data.json', '/local/path/test-data.json');
+console.log('File available at:', remotePath);
+// Use remotePath in simctl commands
+```
+
+<ParamField path="name" type="string" required>
+  The name of the file in the sandbox of the simulator
+</ParamField>
+
+<ParamField path="path" type="string" required>
+  The path of the file to copy to the sandbox
+</ParamField>
+
+<ResponseField name="remotePath" type="Promise<string>">
+  The path of the file that can be used in simctl commands
+</ResponseField>
+
+#### lsof
+
+List all open files on the instance. Useful to start tunnel to the UNIX sockets listed here.
+
+```typescript
+const files = await client.lsof();
+for (const file of files) {
+  console.log(file.path);
+}
+```
+
+<ResponseField name="files" type="Promise<LsofEntry[]>">
+  <Expandable title="LsofEntry properties">
+    <ResponseField name="kind" type="'unix'">
+      File type
+    </ResponseField>
+
+    <ResponseField name="path" type="string">
+      File path
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Connection Methods
+
+#### disconnect
+
+Disconnect from the Limrun instance.
+
+```typescript
+client.disconnect();
+```
+
+#### getConnectionState
+
+Get the current connection state.
+
+```typescript
+const state = client.getConnectionState();
+console.log(state); // 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
+```
+
+<ResponseField name="state" type="ConnectionState">
+  One of: `'connecting'`, `'connected'`, `'disconnected'`, `'reconnecting'`
+</ResponseField>
+
+#### onConnectionStateChange
+
+Register a callback for connection state changes.
+
+```typescript
+const unsubscribe = client.onConnectionStateChange((state) => {
+  console.log('Connection state changed:', state);
+});
+
+// Later, to unregister:
+unsubscribe();
+```
+
+<ParamField path="callback" type="ConnectionStateCallback" required>
+  Callback function that receives the new connection state
+</ParamField>
+
+<ResponseField name="unsubscribe" type="() => void">
+  Function to unregister the callback
+</ResponseField>
+
+## Complete Example
+
+```typescript
+import { createInstanceClient } from '@limrun/ios-client';
+
+async function automateApp() {
+  // Create the client
+  const client = await createInstanceClient({
+    apiUrl: 'https://instance.limrun.com',
+    token: 'your-token'
+  });
+
+  console.log('Connected to:', client.deviceInfo.model);
+
+  // Install and launch app
+  const { bundleId } = await client.installApp('https://example.com/app.ipa', {
+    launchMode: 'RelaunchIfRunning'
+  });
+
+  console.log('App installed:', bundleId);
+
+  // Wait for app to load
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  // Take screenshot
+  const screenshot = await client.screenshot();
+  console.log(`Screenshot: ${screenshot.width}x${screenshot.height}`);
+
+  // Interact with elements
+  await client.tapElement({ accessibilityId: 'username-field' });
+  await client.typeText('user@example.com');
+
+  await client.tapElement({ accessibilityId: 'password-field' });
+  await client.typeText('password123', true); // Press Enter after typing
+
+  // Or tap by label
+  await client.tapElement({ label: 'Sign In' });
+
+  // Stream logs
+  const logStream = client.streamAppLog(bundleId);
+  logStream.on('line', (line) => {
+    console.log('[LOG]', line);
+  });
+
+  // Wait for some activity
+  await new Promise(resolve => setTimeout(resolve, 5000));
+
+  // Cleanup
+  logStream.stop();
+  client.disconnect();
+}
+
+automateApp().catch(console.error);
+```

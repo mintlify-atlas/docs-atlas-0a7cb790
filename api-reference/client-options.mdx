@@ -1,0 +1,520 @@
+---
+title: 'Client Options'
+description: 'Configuration options for the Limrun client'
+---
+
+## Overview
+
+The `ClientOptions` interface defines all configuration options available when creating a new Limrun client instance. These options control authentication, networking, retries, timeouts, logging, and more.
+
+## Type Definition
+
+```typescript
+interface ClientOptions {
+  apiKey?: string | null | undefined;
+  baseURL?: string | null | undefined;
+  timeout?: number | undefined;
+  maxRetries?: number | undefined;
+  fetchOptions?: RequestInit | undefined;
+  fetch?: Fetch | undefined;
+  logLevel?: LogLevel | undefined;
+  logger?: Logger | undefined;
+  defaultHeaders?: HeadersLike | undefined;
+  defaultQuery?: Record<string, string | undefined> | undefined;
+}
+```
+
+## Options
+
+### apiKey
+
+<ParamField path="apiKey" type="string | null | undefined" optional>
+  Your Limrun API key for authentication. This key is used to authenticate all requests to the Limrun API.
+
+  **Default:** Reads from `process.env.LIM_API_KEY`
+
+  **Example:**
+  ```typescript
+  const client = new Limrun({
+    apiKey: 'lim_1234567890abcdef',
+  });
+  ```
+
+  <Note>
+    Set to `null` to explicitly omit API key authentication. You must then provide custom `Authorization` headers for each request.
+  </Note>
+</ParamField>
+
+### baseURL
+
+<ParamField path="baseURL" type="string | null | undefined" optional>
+  Override the default base URL for API requests. Useful for testing against staging environments or using regional endpoints.
+
+  **Default:** Reads from `process.env.LIMRUN_BASE_URL`, falls back to `https://api.limrun.com`
+
+  **Example:**
+  ```typescript
+  const client = new Limrun({
+    baseURL: 'https://staging.api.limrun.com',
+  });
+  ```
+
+  <Warning>
+    Ensure the base URL includes the protocol (`https://`) and does not have a trailing slash.
+  </Warning>
+</ParamField>
+
+### timeout
+
+<ParamField path="timeout" type="number" optional>
+  The maximum amount of time (in milliseconds) that the client will wait for a response from the server before timing out a single request.
+
+  **Default:** `300000` (5 minutes)
+
+  **Unit:** milliseconds
+
+  **Example:**
+  ```typescript
+  const client = new Limrun({
+    timeout: 60000, // 1 minute
+  });
+  ```
+
+  <Info>
+    Request timeouts are retried by default based on the `maxRetries` setting. In a worst-case scenario, you may wait up to `timeout * (maxRetries + 1)` milliseconds before the promise fails.
+  </Info>
+</ParamField>
+
+### maxRetries
+
+<ParamField path="maxRetries" type="number" optional>
+  The maximum number of times the client will retry a request in case of temporary failures, such as network errors or 5XX server errors.
+
+  **Default:** `2`
+
+  **Example:**
+  ```typescript
+  const client = new Limrun({
+    maxRetries: 3,
+  });
+  ```
+
+  Retries are automatically performed for:
+  - Network connection errors
+  - Request timeouts (408)
+  - Conflict errors (409)
+  - Rate limit errors (429)
+  - Server errors (5XX)
+
+  <Tip>
+    The SDK uses exponential backoff with jitter for retries. The delay starts at 0.5 seconds and doubles with each retry, up to a maximum of 8 seconds.
+  </Tip>
+</ParamField>
+
+### fetchOptions
+
+<ParamField path="fetchOptions" type="RequestInit" optional>
+  Additional options to pass to the underlying `fetch` implementation. These options are merged with per-request options, with per-request options taking precedence.
+
+  **Default:** `undefined`
+
+  **Example:**
+  ```typescript
+  const client = new Limrun({
+    fetchOptions: {
+      headers: {
+        'X-Custom-Header': 'value',
+      },
+      credentials: 'include',
+      mode: 'cors',
+    },
+  });
+  ```
+
+  Common use cases:
+  - Setting custom headers for all requests
+  - Configuring CORS mode
+  - Setting credentials policy
+  - Configuring cache behavior
+</ParamField>
+
+### fetch
+
+<ParamField path="fetch" type="Fetch" optional>
+  Specify a custom `fetch` function implementation. This is useful for environments where the global `fetch` is not available or when you need to inject custom networking behavior.
+
+  **Default:** Uses the global `fetch` function
+
+  **Type:**
+  ```typescript
+  type Fetch = (input: RequestInfo, init?: RequestInit) => Promise<Response>;
+  ```
+
+  **Example:**
+  ```typescript
+  import nodeFetch from 'node-fetch';
+
+  const client = new Limrun({
+    fetch: nodeFetch as unknown as Fetch,
+  });
+  ```
+
+  Use cases:
+  - Node.js environments without native fetch
+  - Custom HTTP clients (e.g., axios wrapper)
+  - Request interception and logging
+  - Testing with mock fetch implementations
+</ParamField>
+
+### logLevel
+
+<ParamField path="logLevel" type="LogLevel" optional>
+  Set the logging verbosity level. Controls which log messages are output by the SDK.
+
+  **Default:** Reads from `process.env.LIMRUN_LOG`, falls back to `'warn'`
+
+  **Type:** `'debug' | 'info' | 'warn' | 'error'`
+
+  **Example:**
+  ```typescript
+  const client = new Limrun({
+    logLevel: 'debug',
+  });
+  ```
+
+  **Log Levels:**
+  - `debug` - Detailed debugging information including request/response details
+  - `info` - General informational messages about requests
+  - `warn` - Warning messages (default)
+  - `error` - Error messages only
+
+  <Tip>
+    Use `'debug'` level during development to see detailed request and response information. Switch to `'warn'` or `'error'` in production.
+  </Tip>
+</ParamField>
+
+### logger
+
+<ParamField path="logger" type="Logger" optional>
+  Provide a custom logger implementation for handling SDK log output.
+
+  **Default:** `globalThis.console`
+
+  **Type:**
+  ```typescript
+  interface Logger {
+    debug(...args: any[]): void;
+    info(...args: any[]): void;
+    warn(...args: any[]): void;
+    error(...args: any[]): void;
+  }
+  ```
+
+  **Example:**
+  ```typescript
+  const customLogger = {
+    debug: (...args) => console.log('[DEBUG]', ...args),
+    info: (...args) => console.log('[INFO]', ...args),
+    warn: (...args) => console.warn('[WARN]', ...args),
+    error: (...args) => console.error('[ERROR]', ...args),
+  };
+
+  const client = new Limrun({
+    logger: customLogger,
+  });
+  ```
+
+  Use cases:
+  - Integrate with application logging systems (e.g., Winston, Pino)
+  - Send logs to monitoring services
+  - Format log output for specific environments
+  - Suppress logs entirely
+</ParamField>
+
+### defaultHeaders
+
+<ParamField path="defaultHeaders" type="HeadersLike" optional>
+  Default headers to include with every request to the API. These headers can be overridden or removed in individual requests.
+
+  **Default:** `undefined`
+
+  **Type:** `Headers | Record<string, string | undefined> | Array<[string, string]>`
+
+  **Example:**
+  ```typescript
+  const client = new Limrun({
+    defaultHeaders: {
+      'X-Custom-Header': 'value',
+      'X-Request-Source': 'my-app',
+    },
+  });
+  ```
+
+  <Info>
+    To remove a default header in a specific request, set it to `null` in the request options.
+  </Info>
+</ParamField>
+
+### defaultQuery
+
+<ParamField path="defaultQuery" type="Record<string, string | undefined>" optional>
+  Default query parameters to include with every request to the API. These parameters can be overridden or removed in individual requests.
+
+  **Default:** `undefined`
+
+  **Example:**
+  ```typescript
+  const client = new Limrun({
+    defaultQuery: {
+      version: 'v2',
+      source: 'sdk',
+    },
+  });
+  ```
+
+  <Info>
+    To remove a default query parameter in a specific request, set it to `undefined` in the request options.
+  </Info>
+</ParamField>
+
+## Configuration Examples
+
+### Minimal Configuration
+
+Use environment variables for all configuration:
+
+```typescript
+import Limrun from 'limrun';
+
+// Reads LIM_API_KEY from environment
+const client = new Limrun();
+```
+
+### Development Configuration
+
+Detailed logging and longer timeouts:
+
+```typescript
+import Limrun from 'limrun';
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+  logLevel: 'debug',
+  timeout: 120000, // 2 minutes
+  maxRetries: 1,
+});
+```
+
+### Production Configuration
+
+Optimized for production with custom logging:
+
+```typescript
+import Limrun from 'limrun';
+import logger from './logger'; // Your custom logger
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+  baseURL: process.env.LIMRUN_BASE_URL,
+  logLevel: 'error',
+  logger: logger,
+  timeout: 60000,
+  maxRetries: 3,
+  defaultHeaders: {
+    'X-App-Version': process.env.APP_VERSION,
+    'X-Environment': process.env.NODE_ENV,
+  },
+});
+```
+
+### Testing Configuration
+
+Mock fetch and custom base URL:
+
+```typescript
+import Limrun from 'limrun';
+import { mockFetch } from './test-utils';
+
+const client = new Limrun({
+  apiKey: 'test-key',
+  baseURL: 'http://localhost:3000',
+  fetch: mockFetch,
+  logLevel: 'debug',
+  maxRetries: 0, // No retries in tests
+});
+```
+
+### Regional Configuration
+
+Connect to a specific regional endpoint:
+
+```typescript
+import Limrun from 'limrun';
+
+const euClient = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+  baseURL: 'https://eu.api.limrun.com',
+});
+
+const usClient = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+  baseURL: 'https://us.api.limrun.com',
+});
+```
+
+### Custom Headers and Query Parameters
+
+Set default headers and query params for all requests:
+
+```typescript
+import Limrun from 'limrun';
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+  defaultHeaders: {
+    'X-Client-ID': 'my-app-client',
+    'X-Client-Version': '1.0.0',
+  },
+  defaultQuery: {
+    source: 'typescript-sdk',
+  },
+});
+```
+
+## Environment Variables
+
+The following environment variables are automatically read by the Limrun client:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LIM_API_KEY` | Your Limrun API key | `null` |
+| `LIMRUN_BASE_URL` | Base URL for API requests | `https://api.limrun.com` |
+| `LIMRUN_LOG` | Log level | `'warn'` |
+
+**Example:**
+
+```bash
+export LIM_API_KEY="lim_1234567890abcdef"
+export LIMRUN_BASE_URL="https://api.limrun.com"
+export LIMRUN_LOG="debug"
+```
+
+## TypeScript Types
+
+### LogLevel
+
+```typescript
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+```
+
+### Logger
+
+```typescript
+interface Logger {
+  debug(...args: any[]): void;
+  info(...args: any[]): void;
+  warn(...args: any[]): void;
+  error(...args: any[]): void;
+}
+```
+
+### Fetch
+
+```typescript
+type Fetch = (input: RequestInfo, init?: RequestInit) => Promise<Response>;
+```
+
+### HeadersLike
+
+```typescript
+type HeadersLike = 
+  | Headers 
+  | Record<string, string | undefined> 
+  | Array<[string, string]>;
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Environment Variables for Sensitive Data">
+    Always store API keys and other sensitive configuration in environment variables rather than hardcoding them:
+
+    ```typescript
+    // Good
+    const client = new Limrun({
+      apiKey: process.env.LIM_API_KEY,
+    });
+
+    // Bad
+    const client = new Limrun({
+      apiKey: 'lim_1234567890abcdef', // Never hardcode API keys!
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Configure Appropriate Timeouts">
+    Set timeouts based on your expected operation duration:
+
+    ```typescript
+    // For quick operations
+    const client = new Limrun({
+      timeout: 30000, // 30 seconds
+    });
+
+    // For long-running operations (e.g., builds)
+    const client = new Limrun({
+      timeout: 600000, // 10 minutes
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Use Debug Logging During Development">
+    Enable debug logging to troubleshoot issues:
+
+    ```typescript
+    const client = new Limrun({
+      logLevel: process.env.NODE_ENV === 'development' ? 'debug' : 'warn',
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Integrate with Your Logging System">
+    Provide a custom logger to integrate with your application's logging infrastructure:
+
+    ```typescript
+    import appLogger from './logger';
+
+    const client = new Limrun({
+      logger: {
+        debug: (...args) => appLogger.debug('Limrun', ...args),
+        info: (...args) => appLogger.info('Limrun', ...args),
+        warn: (...args) => appLogger.warn('Limrun', ...args),
+        error: (...args) => appLogger.error('Limrun', ...args),
+      },
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Configure Retries Based on Operation Type">
+    Adjust retry settings based on the criticality and idempotency of your operations:
+
+    ```typescript
+    // For critical operations that must succeed
+    const client = new Limrun({
+      maxRetries: 5,
+    });
+
+    // For non-critical or non-idempotent operations
+    const client = new Limrun({
+      maxRetries: 0,
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## See Also
+
+- [Limrun Client](/api-reference/client) - Main client documentation
+- [Authentication](/core-concepts/authentication) - Authentication setup guide
+- [Retries & Timeouts](/core-concepts/retries-and-timeouts) - Detailed retry behavior
+- [Logging](/advanced/logging) - Advanced logging configuration

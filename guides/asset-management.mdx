@@ -1,0 +1,347 @@
+---
+title: 'Asset Management'
+description: 'Upload and manage APK and iOS app files with the Limrun SDK'
+---
+
+## Overview
+
+Assets are files (APKs, iOS app bundles) stored in Limrun for deployment to instances. The SDK provides methods to create, upload, list, retrieve, and delete assets.
+
+## Asset Type
+
+The `Asset` type contains metadata about uploaded files:
+
+```typescript
+interface Asset {
+  id: string;
+  name: string;
+  displayName?: string;
+  os?: 'ios' | 'android';
+  md5?: string; // Only present if file is uploaded
+  signedDownloadUrl?: string;
+  signedUploadUrl?: string;
+}
+```
+
+## Creating and Uploading Assets
+
+<Steps>
+  <Step title="Get or Create an Asset">
+    Use `getOrCreate` to reserve an asset name and get upload/download URLs:
+
+    ```typescript
+    import Limrun from '@limrun/api';
+
+    const client = new Limrun({
+      apiKey: process.env.LIM_API_KEY,
+    });
+
+    const asset = await client.assets.getOrCreate({
+      name: 'my-app-v1.2.3.apk',
+    });
+
+    console.log('Asset ID:', asset.id);
+    console.log('Upload URL:', asset.signedUploadUrl);
+    console.log('Download URL:', asset.signedDownloadUrl);
+    ```
+
+    <Note>
+      If an asset with this name already exists, `md5` will be present in the response.
+    </Note>
+  </Step>
+
+  <Step title="Check if Upload is Needed">
+    If `md5` is present, the file already exists. Compare checksums to skip re-upload:
+
+    ```typescript
+    import { createHash } from 'crypto';
+    import { readFile } from 'fs/promises';
+
+    const data = await readFile('./my-app.apk');
+    const localMd5 = createHash('md5').update(data).digest('hex');
+
+    if (asset.md5 && asset.md5 === localMd5) {
+      console.log('File already uploaded, skipping upload');
+    } else {
+      console.log('File needs to be uploaded');
+    }
+    ```
+  </Step>
+
+  <Step title="Upload the File">
+    Use the signed upload URL to upload your file:
+
+    ```typescript
+    const uploadResponse = await fetch(asset.signedUploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Length': data.length.toString(),
+        'Content-Type': 'application/octet-stream',
+      },
+      body: data,
+    });
+
+    if (uploadResponse.status !== 200) {
+      throw new Error(`Upload failed: ${uploadResponse.status}`);
+    }
+
+    console.log('Upload successful!');
+    ```
+  </Step>
+</Steps>
+
+## Simplified Upload with `getOrUpload`
+
+The SDK provides a convenience method that handles the entire workflow:
+
+```typescript
+import { basename } from 'path';
+
+const result = await client.assets.getOrUpload({
+  path: './my-app.apk',
+  name: 'my-app-v1.2.3.apk', // Optional, defaults to filename
+});
+
+console.log('Asset ID:', result.id);
+console.log('MD5:', result.md5);
+console.log('Download URL:', result.signedDownloadUrl);
+```
+
+This method:
+1. Calls `getOrCreate` to reserve the asset name
+2. Calculates local file MD5
+3. Compares with server MD5 (if exists)
+4. Uploads only if checksums differ
+5. Returns asset metadata with MD5
+
+## Listing Assets
+
+List all assets in your organization:
+
+<CodeGroup>
+```typescript List All Assets
+const assets = await client.assets.list();
+
+for (const asset of assets) {
+  console.log(asset.name, asset.id, asset.os);
+}
+```
+
+```typescript Filter by Name
+const assets = await client.assets.list({
+  nameFilter: 'my-app',
+});
+
+for (const asset of assets) {
+  console.log('Matched:', asset.name);
+}
+```
+
+```typescript Include Download URLs
+const assets = await client.assets.list({
+  includeDownloadUrl: true,
+});
+
+for (const asset of assets) {
+  console.log('Download from:', asset.signedDownloadUrl);
+}
+```
+
+```typescript Include App Store Assets
+const assets = await client.assets.list({
+  includeAppStore: true,
+});
+
+for (const asset of assets) {
+  if (asset.name.startsWith('appstore/')) {
+    console.log('App Store asset:', asset.name);
+  }
+}
+```
+
+```typescript Limit Results
+const assets = await client.assets.list({
+  limit: 10,
+});
+
+console.log('First 10 assets:', assets.length);
+```
+</CodeGroup>
+
+## Getting an Asset
+
+Retrieve a specific asset by ID:
+
+```typescript
+const asset = await client.assets.get('asset-id-here', {
+  includeDownloadUrl: true,
+  includeUploadUrl: true,
+});
+
+console.log('Asset name:', asset.name);
+console.log('MD5:', asset.md5);
+console.log('Download URL:', asset.signedDownloadUrl);
+```
+
+## Deleting an Asset
+
+Remove an asset when no longer needed:
+
+```typescript
+await client.assets.delete('asset-id-here');
+console.log('Asset deleted');
+```
+
+<Warning>
+  Deleting an asset removes both the metadata and the uploaded file. This operation cannot be undone.
+</Warning>
+
+## Using Assets with Instances
+
+Deploy assets to instances during creation:
+
+### Android Instance
+
+```typescript
+const asset = await client.assets.getOrUpload({
+  path: './my-app.apk',
+  name: 'my-app-v1.2.3.apk',
+});
+
+const instance = await client.androidInstances.create({
+  wait: true,
+  spec: {
+    initialAssets: [
+      {
+        kind: 'App',
+        source: 'AssetName',
+        assetName: asset.name,
+      },
+    ],
+  },
+});
+```
+
+### iOS Instance
+
+```typescript
+const asset = await client.assets.getOrUpload({
+  path: './MyApp.app.zip',
+  name: 'my-ios-app-v2.1.0',
+});
+
+const instance = await client.iosInstances.create({
+  wait: true,
+  spec: {
+    initialAssets: [
+      {
+        kind: 'App',
+        source: 'AssetName',
+        assetName: asset.name,
+        launchMode: 'ForegroundIfRunning',
+      },
+    ],
+  },
+});
+```
+
+## Asset Sources
+
+You can reference assets in multiple ways:
+
+<CodeGroup>
+```typescript By Name
+{
+  kind: 'App',
+  source: 'AssetName',
+  assetName: 'my-app-v1.2.3.apk',
+}
+```
+
+```typescript By ID
+{
+  kind: 'App',
+  source: 'AssetID',
+  assetId: 'asset-id-here',
+}
+```
+
+```typescript By URL
+{
+  kind: 'App',
+  source: 'URL',
+  url: 'https://example.com/my-app.apk',
+}
+```
+
+```typescript Multiple IDs (Android)
+{
+  kind: 'App',
+  source: 'AssetIDs',
+  assetIds: ['asset-id-1', 'asset-id-2'],
+}
+```
+
+```typescript Multiple URLs (Android)
+{
+  kind: 'App',
+  source: 'URLs',
+  urls: ['https://example.com/app1.apk', 'https://example.com/app2.apk'],
+}
+```
+</CodeGroup>
+
+## Best Practices
+
+### Version Your Assets
+
+Include version numbers in asset names for easy management:
+
+```typescript
+const asset = await client.assets.getOrUpload({
+  path: './dist/app.apk',
+  name: `my-app-${version}.apk`,
+});
+```
+
+### Use MD5 for Caching
+
+The `getOrUpload` method automatically skips uploads when MD5 matches:
+
+```typescript
+// First upload
+const asset1 = await client.assets.getOrUpload({
+  path: './my-app.apk',
+  name: 'my-app.apk',
+});
+// File uploaded
+
+// Second call with same content
+const asset2 = await client.assets.getOrUpload({
+  path: './my-app.apk',
+  name: 'my-app.apk',
+});
+// Upload skipped, MD5 matches
+```
+
+### Clean Up Old Assets
+
+Regularly remove unused assets to save storage:
+
+```typescript
+const assets = await client.assets.list({
+  nameFilter: 'my-app',
+});
+
+// Keep only the latest 5 versions
+const toDelete = assets.slice(5);
+
+for (const asset of toDelete) {
+  await client.assets.delete(asset.id);
+  console.log('Deleted old version:', asset.name);
+}
+```
+
+<Tip>
+  Use the `displayName` field to add human-readable descriptions to your assets.
+</Tip>

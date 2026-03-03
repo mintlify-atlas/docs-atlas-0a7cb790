@@ -1,0 +1,313 @@
+---
+title: Full-Stack Application
+description: Complete React + Express application integrating Limrun instances with backend and frontend
+---
+
+This example demonstrates how to integrate Limrun into a full-stack application. It includes a backend API for instance management and a React frontend with the RemoteControl component for streaming instances.
+
+## Architecture Overview
+
+The example has two main components:
+
+- **Backend (Express)**: Handles Limrun API calls with your API key, manages assets, and creates/deletes instances
+- **Frontend (React + Vite)**: Provides UI for instance creation and uses the `@limrun/ui` component to stream the instance
+
+## What This Example Does
+
+1. Users upload app files (APK/IPA) through the frontend
+2. Files are uploaded to Limrun asset storage via backend API
+3. Users select platform (Android/iOS) and configuration
+4. Backend creates instance with uploaded assets
+5. Frontend displays the instance using RemoteControl component
+6. Users can interact with the instance in real-time
+7. Backend handles instance cleanup
+
+## Prerequisites
+
+```bash
+export LIM_API_KEY="lim_..."
+```
+
+## Running the Example
+
+### Start the Backend
+
+```bash
+cd examples/fullstack/backend
+yarn install
+yarn run start
+```
+
+The backend runs on `http://localhost:3000`.
+
+### Start the Frontend
+
+In another terminal:
+
+```bash
+cd examples/fullstack/frontend
+yarn install
+yarn run dev
+```
+
+The frontend runs on `http://localhost:5173`.
+
+### Using the Application
+
+1. Open `http://localhost:5173` in your browser
+2. Select platform (Android or iOS)
+3. Choose Android version if applicable
+4. Optionally upload app files (APK/IPA)
+5. Click "Create Instance"
+6. Interact with the instance in the browser
+7. Click "Stop Instance" when done
+
+## Backend Code
+
+The backend (`backend/index.ts`) provides three endpoints:
+
+### Get Upload URL
+
+```typescript
+app.post('/get-upload-url', async (req, res) => {
+  const { filename } = req.body;
+  
+  // Get or create asset with presigned upload URL
+  const asset = await limrun.assets.getOrCreate({ name: filename });
+  
+  return res.json({
+    uploadUrl: asset.signedUploadUrl,
+    assetName: asset.name,
+    assetId: asset.id,
+    md5: asset.md5,
+  });
+});
+```
+
+This endpoint:
+- Creates a Limrun asset record
+- Returns a presigned S3 URL for direct upload
+- Includes MD5 hash to skip re-uploading identical files
+
+### Create Instance
+
+```typescript
+app.post('/create-instance', async (req, res) => {
+  const { webSessionId, assetNames, platform, androidVersion } = req.body;
+  
+  const initialAssets = assetNames?.length ?
+    assetNames.map((assetName) => ({
+      kind: 'App' as const,
+      source: 'AssetName' as const,
+      assetName,
+    })) : [];
+  
+  if (platform === 'ios') {
+    const result = await limrun.iosInstances.create({
+      reuseIfExists: true,
+      spec: { initialAssets },
+      metadata: { labels: { webSessionId } },
+    });
+    
+    return res.json({
+      id: result.metadata.id,
+      webrtcUrl: result.status.endpointWebSocketUrl,
+      token: result.status.token,
+    });
+  } else {
+    const result = await limrun.androidInstances.create({
+      spec: {
+        initialAssets,
+        clues: [{ kind: 'OSVersion', osVersion: androidVersion || '14' }],
+      },
+    });
+    
+    return res.json({
+      id: result.metadata.id,
+      webrtcUrl: result.status.endpointWebSocketUrl,
+      token: result.status.token,
+    });
+  }
+});
+```
+
+This endpoint:
+- Accepts uploaded asset names and platform preferences
+- Creates instance with appropriate configuration
+- Returns connection details for the frontend
+
+### Stop Instance
+
+```typescript
+app.post('/stop-instance', async (req, res) => {
+  const { instanceId, platform } = req.body;
+  
+  if (platform === 'ios') {
+    await limrun.iosInstances.delete(instanceId);
+  } else {
+    await limrun.androidInstances.delete(instanceId);
+  }
+  
+  return res.json({
+    status: 'success',
+    message: 'Instance stopped successfully',
+  });
+});
+```
+
+This endpoint handles instance cleanup when users are done.
+
+## Frontend Code
+
+### Asset Upload Hook
+
+The `useAssets.ts` hook manages file uploads:
+
+```typescript
+const uploadAsset = async (asset: Asset) => {
+  // Calculate MD5 hash of the file
+  const fileMD5 = await calculateMD5(asset.file);
+  
+  // Get presigned upload URL
+  const { uploadUrl, assetName, md5 } = await fetch(
+    `${backendUrl}/get-upload-url`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: asset.name }),
+    }
+  ).then(r => r.json());
+  
+  // Skip upload if file already exists with same MD5
+  if (md5 && md5 === fileMD5) {
+    console.log(`File already exists, skipping upload`);
+    return;
+  }
+  
+  // Upload file to S3
+  await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: asset.file,
+  });
+};
+```
+
+### RemoteControl Component
+
+The main App component (`frontend/src/App.tsx`) uses the `@limrun/ui` package:
+
+```typescript
+import { RemoteControl } from '@limrun/ui';
+
+function App() {
+  const [instanceData, setInstanceData] = useState();
+  
+  const createInstance = async () => {
+    const response = await fetch('http://localhost:3000/create-instance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        assetNames: getUploadedAssetNames(),
+        platform,
+        androidVersion,
+      }),
+    });
+    
+    const data = await response.json();
+    setInstanceData({
+      id: data.id,
+      webrtcUrl: data.webrtcUrl,
+      token: data.token,
+      platform,
+    });
+  };
+  
+  return (
+    <div>
+      {instanceData && (
+        <RemoteControl
+          url={instanceData.webrtcUrl}
+          token={instanceData.token}
+          sessionId={`session-${Date.now()}`}
+        />
+      )}
+    </div>
+  );
+}
+```
+
+## Key Features
+
+### Secure API Key Handling
+
+The API key never leaves the backend. The frontend only receives:
+- Instance connection URLs
+- Temporary tokens for WebRTC streaming
+- Presigned URLs for direct S3 uploads
+
+### Efficient Asset Management
+
+The MD5 hash comparison prevents re-uploading files:
+
+```typescript
+if (md5 && md5 === fileMD5) {
+  console.log('File already exists, skipping upload');
+  return;
+}
+```
+
+### Real-Time Streaming
+
+The RemoteControl component handles:
+- WebRTC connection setup
+- Video/audio streaming
+- Touch and keyboard input
+- Automatic reconnection
+
+### Platform Flexibility
+
+The same UI works for both Android and iOS instances with platform-specific configurations:
+
+```typescript
+// Android with version selection
+clues: [{ kind: 'OSVersion', osVersion: '14' }]
+
+// iOS with client IP optimization
+clues: [{ kind: 'ClientIP', clientIp: req.socket.remoteAddress }]
+```
+
+## Deployment Considerations
+
+### Backend
+
+- Store `LIM_API_KEY` in environment variables
+- Use CORS configuration for production domains
+- Add rate limiting and authentication
+- Implement user session management
+
+### Frontend
+
+- Configure backend URL for production
+- Add error boundaries and loading states
+- Implement analytics and monitoring
+- Handle network interruptions gracefully
+
+## Use Cases
+
+- **App Testing Platforms**: Let users test apps in browser
+- **Customer Demos**: Show apps without requiring downloads
+- **Internal Tools**: QA dashboards with device access
+- **Education**: Interactive mobile development tutorials
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="iOS Client API" icon="mobile" href="/api-reference/ios-client">
+    Learn about the iOS client API
+  </Card>
+  
+  <Card title="Asset Management" icon="box" href="/api-reference/assets">
+    Understand asset storage and distribution
+  </Card>
+</CardGroup>

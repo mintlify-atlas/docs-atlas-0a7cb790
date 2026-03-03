@@ -1,0 +1,337 @@
+---
+title: 'Streaming Responses'
+description: 'Access raw Response objects and stream response data for advanced use cases'
+---
+
+The Limrun SDK provides methods to access raw `Response` objects and headers, giving you full control over response handling for advanced use cases.
+
+## Response Methods
+
+All SDK methods return an `APIPromise` that extends the standard `Promise` with two additional methods:
+
+- **`.asResponse()`** - Get the raw `Response` without parsing the body
+- **`.withResponse()`** - Get both the parsed data and the raw `Response`
+
+## Getting Raw Responses
+
+Use `.asResponse()` when you need access to the raw `Response` object before the body is parsed:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+});
+
+const response = await client.androidInstances.create().asResponse();
+
+console.log(response.headers.get('X-Request-ID'));
+console.log(response.headers.get('X-RateLimit-Remaining'));
+console.log(response.status);
+console.log(response.statusText);
+
+// Parse the body yourself
+const data = await response.json();
+console.log(data.metadata);
+```
+
+<Info>
+  `.asResponse()` returns as soon as headers are received and does not consume the response body. You're free to implement custom parsing or streaming logic.
+</Info>
+
+## Getting Parsed Data with Response
+
+Use `.withResponse()` to get both the parsed data and the raw `Response` object:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+});
+
+const { data: instance, response } = await client.androidInstances
+  .create()
+  .withResponse();
+
+// Access parsed data
+console.log(instance.id);
+console.log(instance.metadata);
+
+// Access response metadata
+console.log(response.headers.get('X-Request-ID'));
+console.log(response.status);
+```
+
+<Warning>
+  `.withResponse()` consumes the response body. The `Response` object's body will already be read.
+</Warning>
+
+## Accessing Response Headers
+
+Response headers provide useful metadata about the request:
+
+```typescript
+const { data, response } = await client.androidInstances
+  .list()
+  .withResponse();
+
+// Rate limit information
+const remaining = response.headers.get('X-RateLimit-Remaining');
+const limit = response.headers.get('X-RateLimit-Limit');
+const resetTime = response.headers.get('X-RateLimit-Reset');
+
+console.log(`Requests remaining: ${remaining}/${limit}`);
+
+// Request tracing
+const requestId = response.headers.get('X-Request-ID');
+console.log(`Request ID: ${requestId}`);
+
+// Content information
+const contentType = response.headers.get('Content-Type');
+const contentLength = response.headers.get('Content-Length');
+```
+
+## Custom Response Processing
+
+Implement custom response handling with `.asResponse()`:
+
+```typescript
+const response = await client.androidInstances.create().asResponse();
+
+// Custom JSON parsing with error handling
+try {
+  const text = await response.text();
+  const data = JSON.parse(text);
+  console.log('Parsed data:', data);
+} catch (error) {
+  console.error('Failed to parse response:', error);
+  console.log('Raw response:', await response.text());
+}
+```
+
+## Streaming Large Responses
+
+Stream response data for large payloads:
+
+```typescript
+const response = await client.assets.list().asResponse();
+
+if (!response.body) {
+  throw new Error('No response body');
+}
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+let result = '';
+
+while (true) {
+  const { done, value } = await reader.read();
+  
+  if (done) break;
+  
+  result += decoder.decode(value, { stream: true });
+  console.log('Received chunk:', value.length, 'bytes');
+}
+
+const data = JSON.parse(result);
+console.log('Total items:', data.items.length);
+```
+
+## Monitoring Request Performance
+
+Track request timing and performance:
+
+```typescript
+const startTime = Date.now();
+
+const { data, response } = await client.androidInstances
+  .create()
+  .withResponse();
+
+const duration = Date.now() - startTime;
+const serverTiming = response.headers.get('Server-Timing');
+
+console.log(`Total request time: ${duration}ms`);
+if (serverTiming) {
+  console.log(`Server timing: ${serverTiming}`);
+}
+```
+
+## Conditional Requests
+
+Use headers for conditional requests:
+
+```typescript
+// First request
+const { data: instance, response } = await client.androidInstances
+  .retrieve('instance-id')
+  .withResponse();
+
+const etag = response.headers.get('ETag');
+
+// Subsequent request with ETag
+const updated = await client.androidInstances.retrieve('instance-id', {
+  headers: {
+    'If-None-Match': etag,
+  },
+});
+```
+
+## Pagination with Response Metadata
+
+Access pagination metadata from headers:
+
+```typescript
+const { data: page, response } = await client.androidInstances
+  .list({ limit: 10 })
+  .withResponse();
+
+// Check for pagination headers
+const totalCount = response.headers.get('X-Total-Count');
+const hasMore = page.hasNextPage();
+
+console.log(`Showing ${page.items.length} of ${totalCount} total items`);
+console.log(`Has more pages: ${hasMore}`);
+```
+
+## Error Response Handling
+
+Access error response details:
+
+```typescript
+try {
+  const { data, response } = await client.androidInstances
+    .create()
+    .withResponse();
+} catch (error) {
+  if (error instanceof Limrun.APIError) {
+    console.error('Status:', error.status);
+    console.error('Error code:', error.code);
+    console.error('Headers:', error.headers);
+    
+    // Access specific headers
+    const requestId = error.headers['x-request-id'];
+    console.error('Request ID for support:', requestId);
+  }
+}
+```
+
+## TypeScript Configuration
+
+<Warning>
+  If you're getting TypeScript errors about the `Response` type, ensure your `tsconfig.json` is properly configured.
+</Warning>
+
+Add one of the following to your `tsconfig.json`:
+
+<Tabs>
+  <Tab title="NodeNext (Recommended)">
+    ```json
+    {
+      "compilerOptions": {
+        "moduleResolution": "NodeNext"
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="DOM Lib">
+    ```json
+    {
+      "compilerOptions": {
+        "lib": ["DOM", "ES2020"]
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Complete Example
+
+Here's a complete example combining multiple concepts:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const client = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+});
+
+async function createInstanceWithMetadata() {
+  const startTime = Date.now();
+  
+  try {
+    const { data: instance, response } = await client.androidInstances
+      .create({
+        metadata: {
+          app: 'test-app',
+          environment: 'staging',
+        },
+      })
+      .withResponse();
+    
+    const duration = Date.now() - startTime;
+    
+    // Log response metadata
+    console.log('Instance created successfully');
+    console.log('Instance ID:', instance.id);
+    console.log('Request ID:', response.headers.get('X-Request-ID'));
+    console.log('Duration:', duration, 'ms');
+    console.log('Status:', response.status, response.statusText);
+    
+    // Check rate limits
+    const remaining = response.headers.get('X-RateLimit-Remaining');
+    if (remaining && parseInt(remaining) < 10) {
+      console.warn('Low rate limit remaining:', remaining);
+    }
+    
+    return instance;
+  } catch (error) {
+    if (error instanceof Limrun.APIError) {
+      console.error('API Error:', error.status);
+      console.error('Request ID:', error.headers['x-request-id']);
+      console.error('Duration:', Date.now() - startTime, 'ms');
+    }
+    throw error;
+  }
+}
+
+// Usage
+const instance = await createInstanceWithMetadata();
+```
+
+## Implementation Details
+
+The `APIPromise` class extends the native `Promise` and provides these methods:
+
+```typescript
+class APIPromise<T> extends Promise<T> {
+  // Get raw Response (doesn't consume body)
+  asResponse(): Promise<Response>;
+  
+  // Get parsed data and raw Response (consumes body)
+  withResponse(): Promise<{ data: T; response: Response }>;
+}
+```
+
+<Note>
+  All standard `Promise` methods (`.then()`, `.catch()`, `.finally()`) work normally and return the parsed response data.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/core-concepts/error-handling">
+    Learn about handling API errors
+  </Card>
+  <Card title="Pagination" icon="list" href="/guides/pagination">
+    Work with paginated responses
+  </Card>
+  <Card title="Retries and Timeouts" icon="rotate" href="/core-concepts/retries-and-timeouts">
+    Configure retry behavior
+  </Card>
+  <Card title="Logging" icon="file-lines" href="/advanced/logging">
+    Debug requests and responses
+  </Card>
+</CardGroup>

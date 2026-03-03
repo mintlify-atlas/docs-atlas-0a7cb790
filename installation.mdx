@@ -1,0 +1,396 @@
+---
+title: Installation
+description: Install the Limrun TypeScript SDK and configure your development environment
+---
+
+## Package Installation
+
+Install the `@limrun/api` package using your preferred package manager:
+
+<CodeGroup>
+
+```bash npm
+npm install @limrun/api
+```
+
+```bash yarn
+yarn add @limrun/api
+```
+
+```bash pnpm
+pnpm add @limrun/api
+```
+
+```bash bun
+bun add @limrun/api
+```
+
+</CodeGroup>
+
+## Requirements
+
+### TypeScript Version
+
+The SDK requires **TypeScript 4.9 or later** for full type support and IntelliSense features.
+
+```json package.json
+{
+  "devDependencies": {
+    "typescript": "^4.9.0"
+  }
+}
+```
+
+<Info>
+  While TypeScript is recommended, the SDK works perfectly fine with plain JavaScript. Type definitions are included for editor autocomplete.
+</Info>
+
+### Supported Runtimes
+
+The Limrun SDK works across multiple JavaScript runtimes:
+
+| Runtime | Minimum Version | Notes |
+|---------|----------------|-------|
+| **Node.js** | 20 LTS or later | Recommended for server-side usage |
+| **Deno** | v1.28.0+ | Native ESM support |
+| **Bun** | 1.0+ | Fast native performance |
+| **Cloudflare Workers** | Latest | Edge runtime support |
+| **Vercel Edge Runtime** | Latest | Serverless edge functions |
+| **Web Browsers** | Modern browsers | Chrome, Firefox, Safari, Edge |
+| **Jest** | 28+ | Use `node` environment (not `jsdom`) |
+| **Nitro** | v2.6+ | Nuxt and Nitro server support |
+
+<Warning>
+  React Native is **not supported** at this time. If you need React Native support, please open an issue on GitHub.
+</Warning>
+
+## Environment Setup
+
+### API Key Configuration
+
+The SDK requires a Limrun API key for authentication. You can obtain one by signing up at [lim.run](https://lim.run).
+
+#### Using Environment Variables (Recommended)
+
+Set the `LIM_API_KEY` environment variable:
+
+<CodeGroup>
+
+```bash Terminal
+export LIM_API_KEY="your-api-key-here"
+```
+
+```bash .env
+LIM_API_KEY=your-api-key-here
+```
+
+```typescript TypeScript
+import Limrun from '@limrun/api';
+
+// Automatically reads from process.env.LIM_API_KEY
+const limrun = new Limrun();
+```
+
+</CodeGroup>
+
+#### Passing the API Key Directly
+
+Alternatively, pass the API key when creating the client:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const limrun = new Limrun({
+  apiKey: 'your-api-key-here',
+});
+```
+
+<Warning>
+  Never commit API keys to version control. Use environment variables or a secure secret management system.
+</Warning>
+
+## Runtime-Specific Setup
+
+### Node.js
+
+Node.js 20+ has built-in `fetch` support. No additional configuration needed:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const limrun = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+});
+```
+
+### Deno
+
+Import from npm using the `npm:` specifier:
+
+```typescript
+import Limrun from 'npm:@limrun/api';
+
+const limrun = new Limrun({
+  apiKey: Deno.env.get('LIM_API_KEY'),
+});
+```
+
+### Bun
+
+Bun works out of the box with native performance:
+
+```typescript
+import Limrun from '@limrun/api';
+
+const limrun = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+});
+```
+
+### Cloudflare Workers
+
+Use the SDK in Cloudflare Workers for edge-based mobile automation:
+
+```typescript
+import Limrun from '@limrun/api';
+
+export default {
+  async fetch(request: Request, env: Env) {
+    const limrun = new Limrun({
+      apiKey: env.LIM_API_KEY,
+    });
+
+    const instance = await limrun.iosInstances.create({ wait: true });
+    return new Response(JSON.stringify(instance));
+  },
+};
+```
+
+### Vercel Edge Runtime
+
+Deploy mobile automation to Vercel Edge Functions:
+
+```typescript
+import Limrun from '@limrun/api';
+import type { NextRequest } from 'next/server';
+
+export const runtime = 'edge';
+
+export async function GET(request: NextRequest) {
+  const limrun = new Limrun({
+    apiKey: process.env.LIM_API_KEY,
+  });
+
+  const instance = await limrun.androidInstances.create({ wait: true });
+  return Response.json(instance);
+}
+```
+
+### Web Browsers
+
+The SDK works in modern browsers (avoid exposing API keys in client-side code):
+
+```html
+<script type="module">
+  import Limrun from 'https://esm.sh/@limrun/api';
+
+  const limrun = new Limrun({
+    apiKey: 'your-api-key', // Use a proxy server in production!
+  });
+
+  const instance = await limrun.iosInstances.create({ wait: true });
+  console.log(instance);
+</script>
+```
+
+<Warning>
+  **Never expose your API key in client-side browser code.** Use a backend proxy or serverless function to make authenticated requests.
+</Warning>
+
+## Module Systems
+
+The SDK supports both CommonJS and ES Modules:
+
+### ES Modules (Recommended)
+
+```typescript
+import Limrun from '@limrun/api';
+import { Ios, createInstanceClient } from '@limrun/api';
+```
+
+### CommonJS
+
+```javascript
+const Limrun = require('@limrun/api').default;
+const { Ios, createInstanceClient } = require('@limrun/api');
+```
+
+## Type Imports
+
+Import TypeScript types for better IDE support:
+
+```typescript
+import Limrun, {
+  type AndroidInstance,
+  type IosInstance,
+  type ScreenshotData,
+  type AccessibilitySelector,
+} from '@limrun/api';
+
+const instance: Limrun.IosInstance = await client.iosInstances.create();
+```
+
+All request parameters and response types are fully typed with documentation in docstrings:
+
+```typescript
+// Hover over methods in your editor to see type hints
+const screenshot: ScreenshotData = await client.screenshot();
+//    ^? { base64: string; width: number; height: number }
+```
+
+## Verification
+
+Verify your installation by creating a simple test:
+
+```typescript test.ts
+import Limrun from '@limrun/api';
+
+const limrun = new Limrun({
+  apiKey: process.env.LIM_API_KEY,
+});
+
+// List existing iOS instances
+const instances = await limrun.iosInstances.list();
+console.log(`Found ${instances.items.length} iOS instances`);
+
+for await (const instance of limrun.iosInstances.list()) {
+  console.log(`- ${instance.metadata.id} (${instance.status.state})`);
+}
+```
+
+Run it:
+
+<CodeGroup>
+
+```bash Node.js
+node test.ts
+```
+
+```bash Deno
+deno run --allow-net --allow-env test.ts
+```
+
+```bash Bun
+bun run test.ts
+```
+
+</CodeGroup>
+
+## Optional Dependencies
+
+The SDK has minimal required dependencies but integrates with popular tools:
+
+### WebSocket Support
+
+WebSocket functionality uses the `ws` package (included as a dependency):
+
+```json
+{
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
+```
+
+### File Synchronization
+
+The iOS client includes folder sync capabilities using the `ignore` package:
+
+```json
+{
+  "dependencies": {
+    "ignore": "^7.0.5"
+  }
+}
+```
+
+### Server-Sent Events
+
+For streaming responses (used in log streaming):
+
+```json
+{
+  "dependencies": {
+    "eventsource-client": "^1.2.0"
+  }
+}
+```
+
+## Troubleshooting
+
+### Fetch Not Defined
+
+If you're using Node.js 18 or earlier:
+
+```bash
+npm install node-fetch
+```
+
+```typescript
+import fetch from 'node-fetch';
+globalThis.fetch = fetch as any;
+```
+
+### TypeScript Errors
+
+Ensure you're using TypeScript 4.9+:
+
+```bash
+npm install -D typescript@latest
+```
+
+### Module Resolution
+
+If you encounter module resolution issues, configure your `tsconfig.json`:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "target": "ES2022",
+    "lib": ["ES2022"]
+  }
+}
+```
+
+### Jest Configuration
+
+When using Jest, ensure you're using the `node` environment:
+
+```javascript jest.config.js
+module.exports = {
+  testEnvironment: 'node', // Not 'jsdom'
+};
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Create your first iOS or Android instance
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/client">
+    Explore the complete API documentation
+  </Card>
+  <Card title="Authentication" icon="key" href="/core-concepts/authentication">
+    Learn about API keys and security best practices
+  </Card>
+  <Card title="Error Handling" icon="shield" href="/core-concepts/error-handling">
+    Handle errors and retries effectively
+  </Card>
+</CardGroup>
+
+<Note>
+  The SDK is generated using [Stainless](https://www.stainless.com/) and follows semantic versioning. Check the [changelog](https://github.com/limrun-inc/typescript-sdk/releases) for updates.
+</Note>

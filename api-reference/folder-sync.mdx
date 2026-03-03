@@ -1,0 +1,350 @@
+---
+title: "Folder Sync"
+description: "Sync folders with delta patching and watch mode"
+---
+
+## syncApp()
+
+Sync a local folder to a remote server with efficient delta patching. Supports watch mode for continuous syncing on file changes.
+
+This function uses xdelta3 for binary delta compression, allowing efficient updates by only transmitting changed portions of files. It respects `.gitignore` patterns and provides filtering options.
+
+```typescript
+import { syncApp } from 'limrun';
+
+const result = await syncApp('./my-app', {
+  apiUrl: 'https://example.com',
+  token: 'your-token',
+  udid: 'device-id',
+  install: true,
+  watch: true,
+});
+
+// Stop watching when done
+if (result.stopWatching) {
+  result.stopWatching();
+}
+```
+
+### Parameters
+
+<ParamField path="localFolderPath" type="string" required>
+  Path to the local folder to sync
+</ParamField>
+
+<ParamField path="opts" type="FolderSyncOptions" required>
+  Sync configuration options
+  
+  <ParamField path="apiUrl" type="string" required>
+    The API URL of the sync server
+  </ParamField>
+  
+  <ParamField path="token" type="string" required>
+    Auth token for the server
+  </ParamField>
+  
+  <ParamField path="udid" type="string" required>
+    Device or instance identifier - used only for local cache scoping
+  </ParamField>
+  
+  <ParamField path="basisCacheDir" type="string" default=".limsync-cache/">
+    Directory for the client-side folder-sync cache. Used to store the last-synced "basis" copies of files (and related sync metadata) so we can compute xdelta patches on subsequent syncs without re-downloading server state.
+    
+    Can be absolute or relative to process.cwd().
+  </ParamField>
+  
+  <ParamField path="install" type="boolean" default={true}>
+    Whether to install the app after syncing (iOS/Android only)
+  </ParamField>
+  
+  <ParamField path="launchMode" type="'ForegroundIfRunning' | 'RelaunchIfRunning'">
+    Launch mode for the app after installation
+  </ParamField>
+  
+  <ParamField path="watch" type="boolean" default={false}>
+    If true, watch the folder and re-sync on any changes (debounced, single-flight)
+  </ParamField>
+  
+  <ParamField path="maxPatchBytes" type="number" default={4194304}>
+    Max patch size (bytes) to send as delta before falling back to full upload. Default is 4MB.
+  </ParamField>
+  
+  <ParamField path="log" type="(level: 'debug' | 'info' | 'warn' | 'error', msg: string) => void">
+    Custom logging function
+  </ParamField>
+  
+  <ParamField path="filter" type="(relativePath: string) => boolean">
+    Optional filter function to include/exclude files and directories. Called with the relative path from localFolderPath (using forward slashes). For directories, the path ends with '/'. Return true to include, false to exclude.
+    
+    ```typescript
+    // Exclude build folder
+    filter: (path) => !path.startsWith('build/')
+    
+    // Only include source files
+    filter: (path) => path.startsWith('src/') || path.endsWith('.json')
+    ```
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="result" type="Promise<SyncAppResult>">
+  Sync result object
+  
+  <ResponseField name="installedAppPath" type="string">
+    Path where the app was installed (if install was enabled)
+  </ResponseField>
+  
+  <ResponseField name="installedBundleId" type="string">
+    Bundle ID of the installed app (if install was enabled)
+  </ResponseField>
+  
+  <ResponseField name="stopWatching" type="() => void">
+    Present only when watch=true; call to stop watching for file changes
+  </ResponseField>
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+```typescript One-time Sync
+const result = await syncApp('./my-app', {
+  apiUrl: instance.status.apiUrl,
+  token: apiKey,
+  udid: instance.id,
+  install: true,
+});
+
+console.log(`Installed at: ${result.installedAppPath}`);
+```
+
+```typescript Watch Mode
+const result = await syncApp('./my-app', {
+  apiUrl: instance.status.apiUrl,
+  token: apiKey,
+  udid: instance.id,
+  watch: true,
+});
+
+console.log('Watching for changes...');
+
+// Stop watching after 60 seconds
+setTimeout(() => {
+  result.stopWatching?.();
+}, 60000);
+```
+
+```typescript With Custom Filter
+const result = await syncApp('./my-app', {
+  apiUrl: instance.status.apiUrl,
+  token: apiKey,
+  udid: instance.id,
+  filter: (path) => {
+    // Exclude build artifacts
+    if (path.startsWith('build/')) return false;
+    if (path.startsWith('.build/')) return false;
+    if (path.startsWith('DerivedData/')) return false;
+    
+    // Exclude dependencies
+    if (path.startsWith('node_modules/')) return false;
+    if (path.startsWith('Pods/')) return false;
+    
+    return true;
+  },
+});
+```
+
+```typescript Custom Cache Directory
+const result = await syncApp('./my-app', {
+  apiUrl: instance.status.apiUrl,
+  token: apiKey,
+  udid: instance.id,
+  basisCacheDir: '/tmp/my-sync-cache',
+  maxPatchBytes: 10 * 1024 * 1024, // 10MB
+});
+```
+</CodeGroup>
+
+---
+
+## Delta Patching
+
+The folder sync system uses **xdelta3** for efficient binary delta compression. This significantly reduces network transfer by only sending changed portions of files.
+
+### How it Works
+
+1. **First Sync**: All files are sent in full and cached locally in `basisCacheDir`
+2. **Subsequent Syncs**: 
+   - Files are hashed (SHA-256) to detect changes
+   - For changed files, xdelta3 computes a binary patch against the cached basis
+   - If the patch is smaller than `maxPatchBytes`, it's sent as a delta
+   - Otherwise, the full file is sent
+3. **Server Side**: The server applies patches to reconstruct the target files
+4. **Cache Update**: After successful sync, the local cache is updated
+
+### Benefits
+
+- **Reduced bandwidth**: Only changes are transmitted
+- **Faster syncs**: Less data to upload means quicker iterations
+- **Automatic fallback**: Large patches automatically fall back to full upload
+- **No server state required**: Client maintains basis cache locally
+
+### Requirements
+
+- **xdelta3** must be installed and available in PATH
+- The system automatically checks for xdelta3 on first use
+
+```bash
+# Install xdelta3
+brew install xdelta  # macOS
+apt-get install xdelta3  # Ubuntu/Debian
+```
+
+---
+
+## Watch Mode
+
+Watch mode enables continuous syncing by monitoring the folder for changes.
+
+### Features
+
+- **Debounced**: Changes are debounced to avoid excessive syncs
+- **Single-flight**: Only one sync runs at a time; changes queue up
+- **File system events**: Uses native file system watchers for efficiency
+- **Graceful shutdown**: Call `stopWatching()` to cleanly stop monitoring
+
+### Behavior
+
+1. Initial sync happens immediately
+2. File system watcher starts monitoring the folder
+3. On file changes:
+   - If a sync is in progress, the change is queued
+   - Otherwise, a new sync starts immediately
+4. Multiple rapid changes are batched into a single sync
+
+```typescript
+const result = await syncApp('./my-app', {
+  apiUrl: instance.status.apiUrl,
+  token: apiKey,
+  udid: instance.id,
+  watch: true,
+  log: (level, msg) => console.log(`[${level}] ${msg}`),
+});
+
+// Watch runs in background
+console.log('Watching for changes. Press Ctrl+C to stop.');
+
+process.on('SIGINT', () => {
+  console.log('Stopping watcher...');
+  result.stopWatching?.();
+  process.exit(0);
+});
+```
+
+---
+
+## Filtering
+
+The sync system provides multiple levels of filtering:
+
+### 1. Automatic Exclusions
+
+Always excluded:
+- `.git/` directories
+- `.DS_Store` files
+- Files matching `.gitignore` patterns (if `.gitignore` exists)
+
+### 2. Custom Filter Function
+
+Provide a `filter` function for fine-grained control:
+
+```typescript
+filter: (relativePath: string) => boolean
+```
+
+- Called for every file and directory
+- `relativePath` uses forward slashes (`/`)
+- Directories end with `/`
+- Return `true` to include, `false` to exclude
+
+### Examples
+
+```typescript
+// Exclude build directories
+filter: (path) => {
+  return !path.startsWith('build/') && 
+         !path.startsWith('.build/');
+}
+
+// Only include source files
+filter: (path) => {
+  // Include directories
+  if (path.endsWith('/')) return true;
+  
+  // Include specific file types
+  return path.endsWith('.swift') ||
+         path.endsWith('.m') ||
+         path.endsWith('.h') ||
+         path.endsWith('.json');
+}
+
+// Complex filtering
+filter: (path) => {
+  // Exclude node_modules but keep package.json
+  if (path === 'package.json') return true;
+  if (path.startsWith('node_modules/')) return false;
+  
+  // Exclude test files
+  if (path.includes('/__tests__/')) return false;
+  if (path.endsWith('.test.ts')) return false;
+  
+  return true;
+}
+```
+
+---
+
+## Types
+
+### FolderSyncOptions
+
+```typescript
+type FolderSyncOptions = {
+  apiUrl: string;
+  token: string;
+  udid: string;
+  basisCacheDir?: string;
+  install?: boolean;
+  launchMode?: 'ForegroundIfRunning' | 'RelaunchIfRunning';
+  watch?: boolean;
+  maxPatchBytes?: number;
+  log?: (level: 'debug' | 'info' | 'warn' | 'error', msg: string) => void;
+  filter?: (relativePath: string) => boolean;
+};
+```
+
+Options for folder sync operation.
+
+### SyncAppResult
+
+```typescript
+type SyncAppResult = {
+  installedAppPath?: string;
+  installedBundleId?: string;
+  stopWatching?: () => void;
+};
+```
+
+Result of a sync operation.
+
+<ResponseField name="installedAppPath" type="string">
+  Path where the app was installed (present only if install was enabled)
+</ResponseField>
+
+<ResponseField name="installedBundleId" type="string">
+  Bundle ID of the installed app (present only if install was enabled)
+</ResponseField>
+
+<ResponseField name="stopWatching" type="() => void">
+  Function to stop watching for file changes (present only when watch=true)
+</ResponseField>

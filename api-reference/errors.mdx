@@ -1,0 +1,559 @@
+---
+title: 'Errors'
+description: 'Error types and error handling in the Limrun SDK'
+---
+
+## Error Hierarchy
+
+All errors thrown by the Limrun SDK inherit from the base `LimrunError` class. The SDK provides specific error types for different failure scenarios.
+
+```typescript
+LimrunError
+  └─ APIError
+      ├─ BadRequestError (400)
+      ├─ AuthenticationError (401)
+      ├─ PermissionDeniedError (403)
+      ├─ NotFoundError (404)
+      ├─ ConflictError (409)
+      ├─ UnprocessableEntityError (422)
+      ├─ RateLimitError (429)
+      ├─ InternalServerError (5xx)
+      ├─ APIUserAbortError
+      └─ APIConnectionError
+          └─ APIConnectionTimeoutError
+```
+
+## Base Errors
+
+### LimrunError
+
+Base class for all Limrun SDK errors. Extends the standard JavaScript `Error` class.
+
+**Type Definition:**
+
+```typescript
+class LimrunError extends Error {}
+```
+
+**Example:**
+
+```typescript
+import { LimrunError } from 'limrun';
+
+try {
+  const instance = await client.androidInstances.retrieve('inst_123');
+} catch (error) {
+  if (error instanceof LimrunError) {
+    console.error('Limrun SDK error:', error.message);
+  } else {
+    console.error('Unexpected error:', error);
+  }
+}
+```
+
+### APIError
+
+Base class for all API-related errors. Contains HTTP status, headers, and response body information.
+
+**Properties:**
+
+<ResponseField name="status" type="number | undefined">
+  HTTP status code for the response that caused the error
+</ResponseField>
+
+<ResponseField name="headers" type="Headers | undefined">
+  HTTP headers for the response that caused the error
+</ResponseField>
+
+<ResponseField name="error" type="Object | undefined">
+  JSON body of the response that caused the error
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error message
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { APIError } from 'limrun';
+
+try {
+  const instance = await client.androidInstances.retrieve('inst_invalid');
+} catch (error) {
+  if (error instanceof APIError) {
+    console.error(`API Error: ${error.status} - ${error.message}`);
+    console.error('Response body:', error.error);
+    console.error('Response headers:', error.headers);
+  }
+}
+```
+
+## HTTP Status Errors
+
+### BadRequestError
+
+Thrown when the API returns a 400 Bad Request status.
+
+**HTTP Status:** `400`
+
+**Common Causes:**
+- Invalid request parameters
+- Malformed request body
+- Missing required fields
+
+**Example:**
+
+```typescript
+import { BadRequestError } from 'limrun';
+
+try {
+  const instance = await client.androidInstances.create({
+    // Missing required fields
+  });
+} catch (error) {
+  if (error instanceof BadRequestError) {
+    console.error('Invalid request:', error.message);
+    console.error('Details:', error.error);
+  }
+}
+```
+
+### AuthenticationError
+
+Thrown when the API returns a 401 Unauthorized status.
+
+**HTTP Status:** `401`
+
+**Common Causes:**
+- Missing API key
+- Invalid API key
+- Expired authentication token
+
+**Example:**
+
+```typescript
+import { AuthenticationError } from 'limrun';
+
+try {
+  const instances = await client.androidInstances.list();
+} catch (error) {
+  if (error instanceof AuthenticationError) {
+    console.error('Authentication failed. Please check your API key.');
+  }
+}
+```
+
+### PermissionDeniedError
+
+Thrown when the API returns a 403 Forbidden status.
+
+**HTTP Status:** `403`
+
+**Common Causes:**
+- Insufficient permissions for the requested operation
+- Resource access denied
+- Account limitations
+
+**Example:**
+
+```typescript
+import { PermissionDeniedError } from 'limrun';
+
+try {
+  await client.androidInstances.delete('inst_123');
+} catch (error) {
+  if (error instanceof PermissionDeniedError) {
+    console.error('Permission denied:', error.message);
+  }
+}
+```
+
+### NotFoundError
+
+Thrown when the API returns a 404 Not Found status.
+
+**HTTP Status:** `404`
+
+**Common Causes:**
+- Requested resource does not exist
+- Invalid resource ID
+- Resource has been deleted
+
+**Example:**
+
+```typescript
+import { NotFoundError } from 'limrun';
+
+try {
+  const instance = await client.androidInstances.retrieve('inst_nonexistent');
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.error('Instance not found');
+  }
+}
+```
+
+### ConflictError
+
+Thrown when the API returns a 409 Conflict status.
+
+**HTTP Status:** `409`
+
+**Common Causes:**
+- Resource already exists
+- Concurrent modification conflict
+- State conflict
+
+**Example:**
+
+```typescript
+import { ConflictError } from 'limrun';
+
+try {
+  const instance = await client.androidInstances.create({
+    metadata: { id: 'existing-id' },
+  });
+} catch (error) {
+  if (error instanceof ConflictError) {
+    console.error('Resource conflict:', error.message);
+  }
+}
+```
+
+### UnprocessableEntityError
+
+Thrown when the API returns a 422 Unprocessable Entity status.
+
+**HTTP Status:** `422`
+
+**Common Causes:**
+- Request is well-formed but semantically incorrect
+- Validation errors
+- Business logic constraints violated
+
+**Example:**
+
+```typescript
+import { UnprocessableEntityError } from 'limrun';
+
+try {
+  const instance = await client.androidInstances.create({
+    androidVersion: 'invalid-version',
+  });
+} catch (error) {
+  if (error instanceof UnprocessableEntityError) {
+    console.error('Validation error:', error.message);
+    console.error('Details:', error.error);
+  }
+}
+```
+
+### RateLimitError
+
+Thrown when the API returns a 429 Too Many Requests status.
+
+**HTTP Status:** `429`
+
+**Common Causes:**
+- Too many requests in a short time period
+- API rate limit exceeded
+
+**Example:**
+
+```typescript
+import { RateLimitError } from 'limrun';
+
+try {
+  for (let i = 0; i < 1000; i++) {
+    await client.androidInstances.list();
+  }
+} catch (error) {
+  if (error instanceof RateLimitError) {
+    console.error('Rate limit exceeded. Please slow down.');
+    // Implement exponential backoff
+  }
+}
+```
+
+### InternalServerError
+
+Thrown when the API returns a 5xx server error status.
+
+**HTTP Status:** `500` or higher
+
+**Common Causes:**
+- Server-side error
+- Service unavailable
+- Temporary outage
+
+**Example:**
+
+```typescript
+import { InternalServerError } from 'limrun';
+
+try {
+  const instance = await client.androidInstances.create({
+    androidVersion: '13',
+  });
+} catch (error) {
+  if (error instanceof InternalServerError) {
+    console.error('Server error:', error.message);
+    // Retry logic here
+  }
+}
+```
+
+## Connection Errors
+
+### APIConnectionError
+
+Thrown when a connection to the API cannot be established.
+
+**Properties:**
+
+<ResponseField name="message" type="string">
+  Error message (defaults to "Connection error.")
+</ResponseField>
+
+<ResponseField name="cause" type="Error | undefined">
+  The underlying error that caused the connection failure
+</ResponseField>
+
+**Common Causes:**
+- Network is unavailable
+- DNS resolution failed
+- Server is unreachable
+- Firewall blocking connection
+
+**Example:**
+
+```typescript
+import { APIConnectionError } from 'limrun';
+
+const client = new Limrun({
+  baseURL: 'https://invalid-domain.example.com',
+});
+
+try {
+  await client.androidInstances.list();
+} catch (error) {
+  if (error instanceof APIConnectionError) {
+    console.error('Connection failed:', error.message);
+    if (error.cause) {
+      console.error('Underlying error:', error.cause);
+    }
+  }
+}
+```
+
+### APIConnectionTimeoutError
+
+Thrown when a request times out.
+
+**Properties:**
+
+<ResponseField name="message" type="string">
+  Error message (defaults to "Request timed out.")
+</ResponseField>
+
+**Common Causes:**
+- Request took longer than configured timeout
+- Slow network connection
+- Server not responding
+
+**Example:**
+
+```typescript
+import { APIConnectionTimeoutError } from 'limrun';
+
+const client = new Limrun({
+  timeout: 5000, // 5 seconds
+});
+
+try {
+  // Long-running operation
+  await client.androidInstances.create({
+    androidVersion: '13',
+  });
+} catch (error) {
+  if (error instanceof APIConnectionTimeoutError) {
+    console.error('Request timed out');
+    // Increase timeout or retry
+  }
+}
+```
+
+### APIUserAbortError
+
+Thrown when a request is aborted by the user.
+
+**Properties:**
+
+<ResponseField name="message" type="string">
+  Error message (defaults to "Request was aborted.")
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { APIUserAbortError } from 'limrun';
+
+const controller = new AbortController();
+
+const client = new Limrun({
+  fetchOptions: {
+    signal: controller.signal,
+  },
+});
+
+// Start a long-running request
+const promise = client.androidInstances.create({
+  androidVersion: '13',
+});
+
+// Abort after 2 seconds
+setTimeout(() => controller.abort(), 2000);
+
+try {
+  await promise;
+} catch (error) {
+  if (error instanceof APIUserAbortError) {
+    console.log('Request was cancelled by user');
+  }
+}
+```
+
+## Error Handling Best Practices
+
+### Specific Error Handling
+
+Handle specific error types to provide better user feedback:
+
+```typescript
+import {
+  NotFoundError,
+  AuthenticationError,
+  RateLimitError,
+  InternalServerError,
+  APIConnectionError,
+} from 'limrun';
+
+try {
+  const instance = await client.androidInstances.retrieve('inst_123');
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.error('Instance not found');
+  } else if (error instanceof AuthenticationError) {
+    console.error('Please check your API key');
+  } else if (error instanceof RateLimitError) {
+    console.error('Rate limit exceeded, waiting before retry...');
+    await new Promise(resolve => setTimeout(resolve, 60000));
+  } else if (error instanceof InternalServerError) {
+    console.error('Server error, retrying...');
+  } else if (error instanceof APIConnectionError) {
+    console.error('Connection failed, check your network');
+  } else {
+    console.error('Unexpected error:', error);
+  }
+}
+```
+
+### Retry Logic
+
+Implement retry logic for transient errors:
+
+```typescript
+import { InternalServerError, APIConnectionTimeoutError } from 'limrun';
+
+async function retryableRequest<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3
+): Promise<T> {
+  let lastError;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      
+      // Retry on server errors and timeouts
+      if (
+        error instanceof InternalServerError ||
+        error instanceof APIConnectionTimeoutError
+      ) {
+        const delay = Math.pow(2, i) * 1000; // Exponential backoff
+        console.log(`Retry ${i + 1}/${maxRetries} after ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      // Don't retry other errors
+      throw error;
+    }
+  }
+  
+  throw lastError;
+}
+
+// Usage
+const instance = await retryableRequest(() =>
+  client.androidInstances.retrieve('inst_123')
+);
+```
+
+### Accessing Error Details
+
+Extract detailed information from errors:
+
+```typescript
+import { APIError } from 'limrun';
+
+try {
+  await client.androidInstances.create({ /* ... */ });
+} catch (error) {
+  if (error instanceof APIError) {
+    console.error('Status:', error.status);
+    console.error('Message:', error.message);
+    console.error('Error body:', JSON.stringify(error.error, null, 2));
+    
+    // Check specific headers
+    const rateLimitRemaining = error.headers?.get('x-ratelimit-remaining');
+    if (rateLimitRemaining) {
+      console.log(`Rate limit remaining: ${rateLimitRemaining}`);
+    }
+  }
+}
+```
+
+### Type Guards
+
+Use TypeScript type guards for better type safety:
+
+```typescript
+import { APIError, NotFoundError, LimrunError } from 'limrun';
+
+function isLimrunError(error: unknown): error is LimrunError {
+  return error instanceof LimrunError;
+}
+
+function isAPIError(error: unknown): error is APIError {
+  return error instanceof APIError;
+}
+
+try {
+  await client.androidInstances.retrieve('inst_123');
+} catch (error) {
+  if (isAPIError(error)) {
+    // TypeScript knows error has status, headers, etc.
+    console.log('API Error:', error.status, error.message);
+  } else if (isLimrunError(error)) {
+    // TypeScript knows error is a LimrunError
+    console.log('SDK Error:', error.message);
+  } else {
+    // Unknown error
+    console.error('Unexpected error:', error);
+  }
+}
+```

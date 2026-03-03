@@ -1,80 +1,325 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get started with the Limrun TypeScript SDK in under 5 minutes
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
+Before you begin, make sure you have:
 
-### Step 1: Set up your local environment
+- Node.js 20 or later installed
+- A Limrun API key (sign up at [lim.run](https://lim.run))
+- Basic familiarity with TypeScript or JavaScript
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+## Installation
+
+Install the Limrun SDK using your preferred package manager:
+
+<CodeGroup>
+
+```bash npm
+npm install @limrun/api
+```
+
+```bash yarn
+yarn add @limrun/api
+```
+
+```bash pnpm
+pnpm add @limrun/api
+```
+
+```bash bun
+bun add @limrun/api
+```
+
+</CodeGroup>
+
+## Set Up Authentication
+
+The SDK requires an API key to authenticate requests. Set it as an environment variable:
+
+```bash
+export LIM_API_KEY="your-api-key-here"
+```
+
+The client automatically reads `LIM_API_KEY` from your environment. Alternatively, pass it directly when creating the client:
+
+```typescript
+const limrun = new Limrun({ apiKey: 'your-api-key-here' });
+```
+
+<Warning>
+  Never commit your API key to version control. Use environment variables or secure secret management.
+</Warning>
+
+## Your First iOS Instance
+
+<Steps>
+  <Step title="Create a new file">
+    Create a file called `quickstart.ts` in your project:
+
+    ```typescript
+    import Limrun, { Ios } from '@limrun/api';
+
+    const limrun = new Limrun({
+      apiKey: process.env['LIM_API_KEY'],
+    });
+    ```
+  </Step>
+
+  <Step title="Provision an iOS instance">
+    Create an iOS simulator instance. The `wait: true` option ensures the request doesn't return until the instance is ready:
+
+    ```typescript
+    const instance = await limrun.iosInstances.create({
+      wait: true,
+      reuseIfExists: true,  // Reuse if already exists
+      metadata: {
+        labels: {
+          name: 'quickstart-example',
+        },
+      },
+    });
+
+    console.log(`Instance created: ${instance.metadata.id}`);
+    console.log(`State: ${instance.status.state}`);
+    ```
+
+    <Info>
+      The `reuseIfExists` flag returns an existing instance with matching labels instead of creating a new one. This is useful for development to avoid creating duplicate instances.
+    </Info>
+  </Step>
+
+  <Step title="Connect to the instance">
+    Use the WebSocket API to connect and control the device:
+
+    ```typescript
+    if (!instance.status.apiUrl) {
+      throw new Error('API URL is missing');
+    }
+
+    const client = await Ios.createInstanceClient({
+      apiUrl: instance.status.apiUrl,
+      token: instance.status.token,
+      logLevel: 'info',
+    });
+
+    console.log('Connected to iOS instance');
+    ```
+  </Step>
+
+  <Step title="Automate the device">
+    Now you can interact with the iOS simulator. Let's take a screenshot and launch Safari:
+
+    ```typescript
+    // Take a screenshot
+    const screenshot = await client.screenshot();
+    console.log(`Screenshot: ${screenshot.width}x${screenshot.height}`);
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    // Save the screenshot
+    import fs from 'fs';
+    fs.writeFileSync(
+      'screenshot.jpg',
+      Buffer.from(screenshot.base64, 'base64')
+    );
 
-### Step 2: Deploy your changes
+    // Launch Safari
+    await client.launchApp('com.apple.mobilesafari');
+    console.log('Launched Safari');
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    // Open a URL
+    await client.openUrl('https://www.example.com');
+    console.log('Opened example.com');
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    // Tap at coordinates
+    await client.tap(200, 400);
+    console.log('Tapped at (200, 400)');
+    ```
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Clean up">
+    Always disconnect when you're done:
 
-### Step 3: Go live
+    ```typescript
+    client.disconnect();
+    console.log('Disconnected');
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    <Tip>
+      Instances automatically terminate after 3 minutes of inactivity by default. You can customize this with the `inactivityTimeout` spec option.
+    </Tip>
+  </Step>
+</Steps>
 
-## Next steps
+## Complete Example
 
-Now that you have your docs running, explore these key features:
+Here's the full code from the quickstart:
+
+```typescript quickstart.ts
+import Limrun, { Ios } from '@limrun/api';
+import fs from 'fs';
+
+const limrun = new Limrun({
+  apiKey: process.env['LIM_API_KEY'],
+});
+
+// Create iOS instance
+const instance = await limrun.iosInstances.create({
+  wait: true,
+  reuseIfExists: true,
+  metadata: {
+    labels: { name: 'quickstart-example' },
+  },
+});
+
+console.log(`Instance created: ${instance.metadata.id}`);
+
+// Connect via WebSocket
+const client = await Ios.createInstanceClient({
+  apiUrl: instance.status.apiUrl!,
+  token: instance.status.token,
+  logLevel: 'info',
+});
+
+try {
+  // Take a screenshot
+  const screenshot = await client.screenshot();
+  fs.writeFileSync('screenshot.jpg', Buffer.from(screenshot.base64, 'base64'));
+  console.log(`Screenshot saved: ${screenshot.width}x${screenshot.height}`);
+
+  // Launch Safari and navigate
+  await client.launchApp('com.apple.mobilesafari');
+  await client.openUrl('https://www.example.com');
+  console.log('Opened example.com in Safari');
+
+  // Interact with the page
+  await client.tap(200, 400);
+  console.log('Tapped at (200, 400)');
+} finally {
+  client.disconnect();
+  console.log('Disconnected');
+}
+```
+
+## Your First Android Instance
+
+Creating an Android instance follows a similar pattern:
+
+```typescript
+import Limrun, { createInstanceClient } from '@limrun/api';
+
+const limrun = new Limrun({
+  apiKey: process.env['LIM_API_KEY'],
+});
+
+// Create Android instance
+const androidInstance = await limrun.androidInstances.create({
+  wait: true,
+});
+
+console.log(`Instance ${androidInstance.metadata.id} created`);
+
+// Connect via WebSocket
+const client = await createInstanceClient({
+  adbUrl: androidInstance.status.adbWebSocketUrl!,
+  endpointUrl: androidInstance.status.endpointWebSocketUrl!,
+  token: androidInstance.status.token,
+});
+
+// Take a screenshot
+const screenshot = await client.screenshot();
+console.log(`Screenshot: ${screenshot.width}x${screenshot.height}`);
+
+// Start ADB tunnel for advanced control
+const { address, close } = await client.startAdbTunnel();
+console.log(`ADB available at ${address.address}:${address.port}`);
+
+// Clean up
+close();
+client.disconnect();
+```
+
+## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="API Reference" icon="code" href="/api-reference/client">
+    Explore all available methods and types
+  </Card>
+  <Card title="iOS Instances Guide" icon="mobile" href="/guides/ios-instances">
+    Learn about iOS instance management and automation
+  </Card>
+  <Card title="Android Instances Guide" icon="robot" href="/guides/android-instances">
+    Discover ADB tunneling and Android automation
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/core-concepts/error-handling">
+    Handle errors gracefully with structured error types
+  </Card>
 </CardGroup>
 
+## Common Patterns
+
+### Reusing Instances
+
+Avoid creating duplicate instances during development:
+
+```typescript
+const instance = await limrun.iosInstances.create({
+  wait: true,
+  reuseIfExists: true,  // Returns existing instance if labels match
+  metadata: {
+    labels: {
+      environment: 'dev',
+      user: 'alice',
+    },
+  },
+});
+```
+
+### Installing Apps
+
+Install apps from URLs during instance creation:
+
+```typescript
+const instance = await limrun.iosInstances.create({
+  wait: true,
+  spec: {
+    initialAssets: [
+      {
+        kind: 'App',
+        source: 'URL',
+        url: 'https://example.com/MyApp.app.zip',
+        launchMode: 'ForegroundIfRunning',
+      },
+    ],
+  },
+});
+```
+
+### Element-Based Interactions
+
+Use accessibility selectors instead of hard-coded coordinates:
+
+```typescript
+// Tap a button by its accessibility label
+await client.tapElement({ elementType: 'Button', label: 'Submit' });
+
+// Set text field value (faster than typing)
+await client.setElementValue('hello@example.com', {
+  elementType: 'TextField',
+  labelContains: 'Email',
+});
+```
+
+### Listing Installed Apps
+
+```typescript
+const apps = await client.listApps();
+apps.forEach((app) => {
+  console.log(`${app.name} (${app.bundleId})`);
+});
+```
+
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Check out the [examples directory](https://github.com/limrun-inc/typescript-sdk/tree/main/examples) in the GitHub repository for complete working examples including Playwright, Appium, and WebSocket integrations.
 </Note>

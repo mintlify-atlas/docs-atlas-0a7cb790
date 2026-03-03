@@ -1,0 +1,430 @@
+---
+title: 'Android Instances'
+description: 'API reference for managing Android instances in the Limrun TypeScript SDK'
+---
+
+The `AndroidInstances` resource provides methods to create, list, retrieve, and delete Android instances.
+
+## Methods
+
+### create()
+
+Create a new Android instance.
+
+```typescript
+create(
+  params: AndroidInstanceCreateParams,
+  options?: RequestOptions
+): APIPromise<AndroidInstance>
+```
+
+#### Parameters
+
+<ParamField query="reuseIfExists" type="boolean" optional>
+  If there is another instance with given labels and region, return that one instead of creating a new instance.
+</ParamField>
+
+<ParamField query="wait" type="boolean" optional>
+  Return after the instance is ready to connect.
+</ParamField>
+
+<ParamField body="metadata" type="object" optional>
+  Metadata for the Android instance.
+  
+  <ParamField body="displayName" type="string" optional>
+    Human-readable display name for the instance.
+  </ParamField>
+  
+  <ParamField body="labels" type="Record<string, string>" optional>
+    Key-value pairs for labeling the instance.
+  </ParamField>
+</ParamField>
+
+<ParamField body="spec" type="object" optional>
+  Specification for the Android instance.
+  
+  <ParamField body="region" type="string" optional>
+    The region where the instance will be created. If not given, will be decided based on scheduling clues and availability.
+  </ParamField>
+  
+  <ParamField body="inactivityTimeout" type="string" optional>
+    After how many minutes of inactivity should the instance be terminated. Example values: `"1m"`, `"10m"`, `"3h"`. Default is `"3m"`. Providing `"0"` disables inactivity checks altogether.
+  </ParamField>
+  
+  <ParamField body="hardTimeout" type="string" optional>
+    After how many minutes should the instance be terminated. Example values: `"1m"`, `"10m"`, `"3h"`. Default is `"0"` which means no hard timeout.
+  </ParamField>
+  
+  <ParamField body="clues" type="Array<Clue>" optional>
+    Scheduling clues to help determine optimal instance placement.
+    
+    Each clue object has:
+    - `kind`: `"ClientIP"` or `"OSVersion"`
+    - `clientIp`: IP address (when kind is `"ClientIP"`)
+    - `osVersion`: Major Android version like `"13"`, `"14"`, or `"15"` (when kind is `"OSVersion"`)
+  </ParamField>
+  
+  <ParamField body="initialAssets" type="Array<InitialAsset>" optional>
+    Assets to load when the instance starts.
+    
+    Each asset object has:
+    - `kind`: `"App"` or `"Configuration"`
+    - `source`: `"URL"`, `"URLs"`, `"AssetName"`, `"AssetNames"`, or `"AssetIDs"`
+    - `url`: Single URL (when source is `"URL"`)
+    - `urls`: Multiple URLs (when source is `"URLs"`)
+    - `assetName`: Asset name (when source is `"AssetName"`)
+    - `assetNames`: Multiple asset names (when source is `"AssetNames"`)
+    - `assetIds`: Asset IDs (when source is `"AssetIDs"`)
+    - `configuration`: Configuration object for kind `"Configuration"`
+  </ParamField>
+  
+  <ParamField body="sandbox" type="object" optional>
+    Sandbox configuration.
+    
+    <ParamField body="playwrightAndroid" type="object" optional>
+      Playwright Android configuration.
+      
+      <ParamField body="enabled" type="boolean" optional>
+        Enable Playwright Android sandbox.
+      </ParamField>
+    </ParamField>
+  </ParamField>
+</ParamField>
+
+#### Returns
+
+<ResponseField name="metadata" type="object" required>
+  <ResponseField name="id" type="string" required>
+    Unique identifier for the instance.
+  </ResponseField>
+  
+  <ResponseField name="createdAt" type="string" required>
+    ISO 8601 timestamp when the instance was created.
+  </ResponseField>
+  
+  <ResponseField name="organizationId" type="string" required>
+    Organization ID that owns this instance.
+  </ResponseField>
+  
+  <ResponseField name="displayName" type="string" optional>
+    Human-readable display name.
+  </ResponseField>
+  
+  <ResponseField name="labels" type="Record<string, string>" optional>
+    Key-value labels attached to the instance.
+  </ResponseField>
+  
+  <ResponseField name="terminatedAt" type="string" optional>
+    ISO 8601 timestamp when the instance was terminated.
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="spec" type="object" required>
+  <ResponseField name="inactivityTimeout" type="string" required>
+    Configured inactivity timeout.
+  </ResponseField>
+  
+  <ResponseField name="region" type="string" required>
+    Region where the instance is running.
+  </ResponseField>
+  
+  <ResponseField name="hardTimeout" type="string" optional>
+    Configured hard timeout.
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="status" type="object" required>
+  <ResponseField name="token" type="string" required>
+    Authentication token for connecting to the instance.
+  </ResponseField>
+  
+  <ResponseField name="state" type="string" required>
+    Current state: `"unknown"`, `"creating"`, `"assigned"`, `"ready"`, or `"terminated"`.
+  </ResponseField>
+  
+  <ResponseField name="adbWebSocketUrl" type="string" optional>
+    WebSocket URL for ADB connection.
+  </ResponseField>
+  
+  <ResponseField name="endpointWebSocketUrl" type="string" optional>
+    WebSocket URL for endpoint connection.
+  </ResponseField>
+  
+  <ResponseField name="targetHttpPortUrlPrefix" type="string" optional>
+    URL prefix for accessing HTTP ports on the instance.
+  </ResponseField>
+  
+  <ResponseField name="errorMessage" type="string" optional>
+    Error message if the instance failed.
+  </ResponseField>
+  
+  <ResponseField name="sandbox" type="object" optional>
+    <ResponseField name="playwrightAndroid" type="object" optional>
+      <ResponseField name="url" type="string" optional>
+        Playwright Android connection URL.
+      </ResponseField>
+    </ResponseField>
+  </ResponseField>
+</ResponseField>
+
+#### Example
+
+```typescript
+const instance = await limrun.androidInstances.create({
+  wait: true,
+  metadata: {
+    displayName: "Test Device",
+    labels: {
+      environment: "staging",
+      team: "qa"
+    }
+  },
+  spec: {
+    region: "us-west",
+    inactivityTimeout: "10m",
+    hardTimeout: "1h",
+    clues: [
+      {
+        kind: "OSVersion",
+        osVersion: "14"
+      }
+    ],
+    initialAssets: [
+      {
+        kind: "App",
+        source: "URL",
+        url: "https://example.com/app.apk"
+      }
+    ],
+    sandbox: {
+      playwrightAndroid: {
+        enabled: true
+      }
+    }
+  }
+});
+
+console.log(instance.metadata.id);
+console.log(instance.status.state); // "ready"
+```
+
+---
+
+### list()
+
+List Android instances with optional filters.
+
+```typescript
+list(
+  query?: AndroidInstanceListParams,
+  options?: RequestOptions
+): PagePromise<AndroidInstancesItems, AndroidInstance>
+```
+
+#### Parameters
+
+<ParamField query="labelSelector" type="string" optional>
+  Labels filter to apply to Android instances to return. Expects a comma-separated list of key=value pairs (e.g., `"env=prod,region=us-west"`).
+</ParamField>
+
+<ParamField query="region" type="string" optional>
+  Region where the instance is scheduled on.
+</ParamField>
+
+<ParamField query="state" type="string" optional>
+  State filter to apply to Android instances to return. Each comma-separated state will be used as part of an OR clause, e.g. `"assigned,ready"` will return all instances that are either assigned or ready.
+  
+  Valid states: `"creating"`, `"assigned"`, `"ready"`, `"terminated"`, `"unknown"`
+</ParamField>
+
+<ParamField query="pageSize" type="number" optional>
+  Number of items per page.
+</ParamField>
+
+<ParamField query="pageToken" type="string" optional>
+  Token for pagination.
+</ParamField>
+
+#### Returns
+
+Returns a paginated list of `AndroidInstance` objects.
+
+#### Example
+
+```typescript
+// List all ready instances
+const instances = await limrun.androidInstances.list({
+  state: "ready"
+});
+
+for await (const instance of instances) {
+  console.log(instance.metadata.id, instance.status.state);
+}
+
+// List instances with specific labels
+const stagingInstances = await limrun.androidInstances.list({
+  labelSelector: "environment=staging,team=qa"
+});
+```
+
+---
+
+### get()
+
+Get an Android instance by ID.
+
+```typescript
+get(
+  id: string,
+  options?: RequestOptions
+): APIPromise<AndroidInstance>
+```
+
+#### Parameters
+
+<ParamField path="id" type="string" required>
+  The unique identifier of the Android instance.
+</ParamField>
+
+#### Returns
+
+Returns an `AndroidInstance` object with the same structure as described in the `create()` method.
+
+#### Example
+
+```typescript
+const instance = await limrun.androidInstances.get("instance_123");
+
+console.log(instance.metadata.displayName);
+console.log(instance.status.state);
+console.log(instance.status.adbWebSocketUrl);
+```
+
+---
+
+### delete()
+
+Delete an Android instance.
+
+```typescript
+delete(
+  id: string,
+  options?: RequestOptions
+): APIPromise<void>
+```
+
+#### Parameters
+
+<ParamField path="id" type="string" required>
+  The unique identifier of the Android instance to delete.
+</ParamField>
+
+#### Returns
+
+Returns a promise that resolves when the instance is deleted.
+
+#### Example
+
+```typescript
+await limrun.androidInstances.delete("instance_123");
+console.log("Instance deleted successfully");
+```
+
+---
+
+## Type Definitions
+
+### AndroidInstance
+
+The complete Android instance object returned by the API.
+
+```typescript
+interface AndroidInstance {
+  metadata: {
+    id: string;
+    createdAt: string;
+    organizationId: string;
+    displayName?: string;
+    labels?: Record<string, string>;
+    terminatedAt?: string;
+  };
+  spec: {
+    inactivityTimeout: string;
+    region: string;
+    hardTimeout?: string;
+  };
+  status: {
+    token: string;
+    state: 'unknown' | 'creating' | 'assigned' | 'ready' | 'terminated';
+    adbWebSocketUrl?: string;
+    endpointWebSocketUrl?: string;
+    errorMessage?: string;
+    targetHttpPortUrlPrefix?: string;
+    sandbox?: {
+      playwrightAndroid?: {
+        url?: string;
+      };
+    };
+  };
+}
+```
+
+### AndroidInstanceCreateParams
+
+Parameters for creating a new Android instance.
+
+```typescript
+interface AndroidInstanceCreateParams {
+  // Query parameters
+  reuseIfExists?: boolean;
+  wait?: boolean;
+  
+  // Body parameters
+  metadata?: {
+    displayName?: string;
+    labels?: Record<string, string>;
+  };
+  spec?: {
+    region?: string;
+    inactivityTimeout?: string;
+    hardTimeout?: string;
+    clues?: Array<{
+      kind: 'ClientIP' | 'OSVersion';
+      clientIp?: string;
+      osVersion?: string;
+    }>;
+    initialAssets?: Array<{
+      kind: 'App' | 'Configuration';
+      source?: 'URL' | 'URLs' | 'AssetName' | 'AssetNames' | 'AssetIDs';
+      url?: string;
+      urls?: Array<string>;
+      assetName?: string;
+      assetNames?: Array<string>;
+      assetIds?: Array<string>;
+      configuration?: {
+        kind: 'ChromeFlag';
+        chromeFlag?: 'enable-command-line-on-non-rooted-devices@1';
+      };
+    }>;
+    sandbox?: {
+      playwrightAndroid?: {
+        enabled?: boolean;
+      };
+    };
+  };
+}
+```
+
+### AndroidInstanceListParams
+
+Parameters for listing Android instances.
+
+```typescript
+interface AndroidInstanceListParams {
+  labelSelector?: string;
+  region?: string;
+  state?: string;
+  pageSize?: number;
+  pageToken?: string;
+}
+```

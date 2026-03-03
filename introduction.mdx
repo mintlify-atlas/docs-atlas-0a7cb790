@@ -1,0 +1,172 @@
+---
+title: Introduction
+description: Control iOS and Android devices in the cloud with the Limrun TypeScript SDK
+---
+
+## Welcome to Limrun
+
+Limrun provides cloud-based iOS and Android device automation through a powerful TypeScript SDK. Create instances, automate mobile workflows, run tests, and build interactive experiences—all from your code.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get up and running in minutes with your first iOS or Android instance
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference"
+  >
+    Explore the complete API documentation and TypeScript types
+  </Card>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Install the SDK and configure your environment
+  </Card>
+  <Card
+    title="Core Concepts"
+    icon="book"
+    href="/core-concepts"
+  >
+    Understand instances, connections, and automation workflows
+  </Card>
+</CardGroup>
+
+## What is Limrun?
+
+The Limrun TypeScript SDK enables you to:
+
+- **Provision cloud devices instantly** - Create iOS simulators and Android emulators on-demand in seconds
+- **Automate mobile interactions** - Control touches, keyboard input, app launches, and screen captures programmatically
+- **Run mobile tests at scale** - Integrate with Playwright, Appium, or custom test frameworks
+- **Build interactive tools** - Create developer sandboxes, demo environments, or automation workflows
+- **Access via WebSocket** - Real-time bidirectional communication with low latency
+
+## Key Features
+
+### iOS Automation
+
+- Full iOS simulator control via WebSocket API
+- Screenshot capture and accessibility tree inspection
+- Touch, tap, and gesture simulation
+- App installation, launching, and termination
+- Keyboard input and hardware key simulation
+- Element-based interactions using accessibility selectors
+- Integration with Xcode and development workflows
+
+### Android Automation
+
+- Android emulator provisioning with ADB access
+- WebSocket-based ADB tunneling
+- APK installation from URLs
+- Screenshot and device control
+- Playwright for Android integration
+- Chrome DevTools Protocol support
+
+### Developer Experience
+
+- **TypeScript-first** - Fully typed API with IntelliSense support
+- **Cross-runtime** - Works in Node.js 20+, Deno, Bun, Cloudflare Workers, and more
+- **Auto-pagination** - Iterate through large result sets effortlessly
+- **Built-in retries** - Automatic retry logic for transient failures
+- **Error handling** - Structured error types for different failure scenarios
+- **Resource cleanup** - Automatic instance lifecycle management
+
+## Simple Example
+
+Here's a complete example that creates an iOS instance and takes a screenshot:
+
+```typescript
+import Limrun, { Ios } from '@limrun/api';
+
+const limrun = new Limrun({
+  apiKey: process.env['LIM_API_KEY'],
+});
+
+// Create an iOS instance
+const instance = await limrun.iosInstances.create({
+  wait: true,  // Wait until ready to connect
+  metadata: {
+    labels: { environment: 'demo' },
+  },
+});
+
+// Connect to the instance
+const client = await Ios.createInstanceClient({
+  apiUrl: instance.status.apiUrl!,
+  token: instance.status.token,
+});
+
+// Take a screenshot
+const screenshot = await client.screenshot();
+console.log(`Screenshot: ${screenshot.width}x${screenshot.height}`);
+
+// Clean up
+client.disconnect();
+```
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Mobile Testing" icon="vial">
+    Run automated UI tests, visual regression tests, and integration tests on real iOS and Android devices in the cloud.
+  </Card>
+  <Card title="CI/CD Integration" icon="gears">
+    Integrate mobile testing into your continuous integration pipeline with on-demand device provisioning.
+  </Card>
+  <Card title="Development Sandboxes" icon="cube">
+    Create isolated development environments for testing apps, debugging issues, or exploring iOS/Android features.
+  </Card>
+  <Card title="Demo Automation" icon="display">
+    Build automated product demos, tutorials, or interactive documentation with programmatic device control.
+  </Card>
+</CardGroup>
+
+## Platform Support
+
+The SDK supports modern JavaScript runtimes:
+
+- **Node.js** 20 LTS or later
+- **Deno** v1.28.0 or higher
+- **Bun** 1.0 or later
+- **Cloudflare Workers**
+- **Vercel Edge Runtime**
+- **Web browsers** (Chrome, Firefox, Safari, Edge)
+
+Requires **TypeScript 4.9** or later for full type support.
+
+## Next Steps
+
+<Steps>
+  <Step title="Install the SDK">
+    Follow the [installation guide](/installation) to add `@limrun/api` to your project
+  </Step>
+  <Step title="Get your API key">
+    Sign up at [lim.run](https://lim.run) and obtain your `LIM_API_KEY`
+  </Step>
+  <Step title="Try the quickstart">
+    Follow the [quickstart guide](/quickstart) to create your first instance
+  </Step>
+  <Step title="Explore examples">
+    Check out integration examples for Playwright, Appium, and WebSocket automation
+  </Step>
+</Steps>
+
+## Getting Help
+
+Need assistance? We're here to help:
+
+- Browse the [API Reference](/api-reference) for detailed method documentation
+- Check out [Core Concepts](/core-concepts) to understand Limrun's architecture
+- Visit the [GitHub repository](https://github.com/limrun-inc/typescript-sdk) for examples and issues
+- Read the [REST API documentation](https://lim.run) for low-level details
+
+<Note>
+  The Limrun SDK is generated with [Stainless](https://www.stainless.com/) and follows SemVer conventions for versioning.
+</Note>

@@ -1,0 +1,625 @@
+---
+title: 'Types'
+description: 'Core TypeScript types and interfaces in the Limrun SDK'
+---
+
+## Promise Types
+
+### APIPromise
+
+A subclass of `Promise` providing additional helper methods for interacting with the SDK.
+
+<ResponseField name="asResponse" type="() => Promise<Response>">
+  Gets the raw `Response` instance instead of parsing the response data.
+</ResponseField>
+
+<ResponseField name="withResponse" type="() => Promise<{ data: T; response: Response }>">
+  Gets both the parsed response data and the raw `Response` instance.
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { Limrun } from 'limrun';
+
+const client = new Limrun();
+
+// Get parsed data
+const instance = await client.androidInstances.retrieve('inst_123');
+
+// Get raw response
+const response = await client.androidInstances.retrieve('inst_123').asResponse();
+
+// Get both
+const { data, response } = await client.androidInstances.retrieve('inst_123').withResponse();
+```
+
+### PagePromise
+
+A specialized promise for paginated API responses. Extends `APIPromise` and implements `AsyncIterable` to support auto-pagination.
+
+**Type Signature:**
+
+```typescript
+class PagePromise<PageClass, Item> extends APIPromise<PageClass>
+  implements AsyncIterable<Item>
+```
+
+**Example:**
+
+```typescript
+// Auto-paginate through all items
+for await (const instance of client.androidInstances.list()) {
+  console.log(instance.metadata.id);
+}
+
+// Or await the first page
+const page = await client.androidInstances.list();
+for (const instance of page.items) {
+  console.log(instance.metadata.id);
+}
+```
+
+## Upload Types
+
+### Uploadable
+
+Represents data that can be uploaded to the API. Typically a native `File` class instance.
+
+**Type Definition:**
+
+```typescript
+type Uploadable = File | Response | FsReadStream | BunFile;
+```
+
+<ResponseField name="File" type="File">
+  Native browser or Node.js File object
+</ResponseField>
+
+<ResponseField name="Response" type="Response">
+  Fetch API Response object
+</ResponseField>
+
+<ResponseField name="FsReadStream" type="AsyncIterable<Uint8Array>">
+  Node.js fs.createReadStream() result
+</ResponseField>
+
+<ResponseField name="BunFile" type="Blob">
+  Bun-specific File type
+</ResponseField>
+
+### ToFileInput
+
+Input types accepted by the `toFile()` utility function.
+
+**Type Definition:**
+
+```typescript
+type ToFileInput =
+  | FileLike
+  | ResponseLike
+  | Exclude<BlobLikePart, string>
+  | AsyncIterable<BlobLikePart>;
+```
+
+**Example:**
+
+```typescript
+import { toFile } from 'limrun';
+
+// From a buffer
+const file = await toFile(buffer, 'app.apk', { type: 'application/vnd.android.package-archive' });
+
+// From a fetch response
+const response = await fetch('https://example.com/app.apk');
+const file = await toFile(response);
+
+// From a stream
+import fs from 'fs';
+const stream = fs.createReadStream('./app.apk');
+const file = await toFile(stream, 'app.apk');
+```
+
+## Pagination Types
+
+### ItemsParams
+
+Parameters for paginated list requests.
+
+<ResponseField name="startingAfter" type="string" optional>
+  ID of the item to start after (for forward pagination)
+</ResponseField>
+
+<ResponseField name="endingBefore" type="string" optional>
+  ID of the item to end before (for backward pagination)
+</ResponseField>
+
+<ResponseField name="limit" type="number" optional>
+  Maximum number of items to return per page
+</ResponseField>
+
+**Example:**
+
+```typescript
+// Get first 10 items
+const page1 = await client.androidInstances.list({ limit: 10 });
+
+// Get next 10 items
+const lastId = page1.items[page1.items.length - 1].metadata.id;
+const page2 = await client.androidInstances.list({ limit: 10, startingAfter: lastId });
+```
+
+### AbstractPage
+
+Base class for paginated responses. Implements `AsyncIterable` for easy iteration.
+
+<ResponseField name="hasNextPage" type="() => boolean">
+  Check if there are more pages available
+</ResponseField>
+
+<ResponseField name="getNextPage" type="() => Promise<this>">
+  Fetch the next page of results
+</ResponseField>
+
+<ResponseField name="iterPages" type="() => AsyncGenerator<this>">
+  Iterate through all pages
+</ResponseField>
+
+**Example:**
+
+```typescript
+const page = await client.androidInstances.list();
+
+// Check for next page
+if (page.hasNextPage()) {
+  const nextPage = await page.getNextPage();
+}
+
+// Iterate all pages
+for await (const page of page.iterPages()) {
+  console.log(`Page has ${page.items.length} items`);
+}
+```
+
+## Instance Types
+
+### ConnectionState
+
+Represents the connection state of an instance client.
+
+**Type Definition:**
+
+```typescript
+type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
+```
+
+<ResponseField name="connecting" type="string">
+  Initial connection is being established
+</ResponseField>
+
+<ResponseField name="connected" type="string">
+  Successfully connected to the instance
+</ResponseField>
+
+<ResponseField name="disconnected" type="string">
+  Connection has been closed
+</ResponseField>
+
+<ResponseField name="reconnecting" type="string">
+  Attempting to reconnect after a disconnection
+</ResponseField>
+
+### LogLevel
+
+Controls the verbosity of logging in clients.
+
+**Type Definition:**
+
+```typescript
+type LogLevel = 'none' | 'error' | 'warn' | 'info' | 'debug';
+```
+
+<ResponseField name="none" type="string">
+  No logging output
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Only log errors
+</ResponseField>
+
+<ResponseField name="warn" type="string">
+  Log warnings and errors
+</ResponseField>
+
+<ResponseField name="info" type="string">
+  Log informational messages, warnings, and errors (default)
+</ResponseField>
+
+<ResponseField name="debug" type="string">
+  Log all messages including debug information
+</ResponseField>
+
+### InstanceClientOptions
+
+Configuration options for creating an instance client.
+
+<ResponseField name="adbUrl" type="string" required>
+  The URL of the ADB WebSocket endpoint
+</ResponseField>
+
+<ResponseField name="endpointUrl" type="string" required>
+  The URL of the main endpoint WebSocket
+</ResponseField>
+
+<ResponseField name="token" type="string" required>
+  Authentication token for WebSocket connections
+</ResponseField>
+
+<ResponseField name="adbPath" type="string" default="'adb'">
+  Path to the ADB executable
+</ResponseField>
+
+<ResponseField name="logLevel" type="LogLevel" default="'info'">
+  Controls logging verbosity
+</ResponseField>
+
+<ResponseField name="maxReconnectAttempts" type="number" default="6">
+  Maximum number of reconnection attempts
+</ResponseField>
+
+<ResponseField name="reconnectDelay" type="number" default="1000">
+  Initial reconnection delay in milliseconds
+</ResponseField>
+
+<ResponseField name="maxReconnectDelay" type="number" default="30000">
+  Maximum reconnection delay in milliseconds
+</ResponseField>
+
+## iOS-Specific Types
+
+### AccessibilitySelector
+
+Selector criteria for finding accessibility elements on iOS.
+
+<ResponseField name="accessibilityId" type="string" optional>
+  Match by AXUniqueId (accessibilityIdentifier) - exact match
+</ResponseField>
+
+<ResponseField name="label" type="string" optional>
+  Match by AXLabel - exact match
+</ResponseField>
+
+<ResponseField name="labelContains" type="string" optional>
+  Match by AXLabel - contains (case-insensitive)
+</ResponseField>
+
+<ResponseField name="elementType" type="string" optional>
+  Match by element type/role (e.g., "Button", "TextField") - case-insensitive
+</ResponseField>
+
+<ResponseField name="title" type="string" optional>
+  Match by title - exact match
+</ResponseField>
+
+<ResponseField name="titleContains" type="string" optional>
+  Match by title - contains (case-insensitive)
+</ResponseField>
+
+<ResponseField name="value" type="string" optional>
+  Match by AXValue - exact match
+</ResponseField>
+
+**Example:**
+
+```typescript
+import * as Ios from 'limrun/ios';
+
+const client = await Ios.createInstanceClient({
+  adbUrl: instance.adbWsUrl,
+  endpointUrl: instance.endpointWsUrl,
+  token: instance.token,
+});
+
+// Tap a button by accessibility ID
+await client.tapElement({ accessibilityId: 'login-button' });
+
+// Tap a button by label
+await client.tapElement({ label: 'Submit', elementType: 'Button' });
+```
+
+### ScreenshotData
+
+Result from taking a screenshot.
+
+<ResponseField name="base64" type="string">
+  Base64-encoded JPEG image data
+</ResponseField>
+
+<ResponseField name="width" type="number">
+  Width in points (for tap coordinates)
+</ResponseField>
+
+<ResponseField name="height" type="number">
+  Height in points (for tap coordinates)
+</ResponseField>
+
+**Example:**
+
+```typescript
+const screenshot = await client.screenshot();
+
+// Save to file
+import fs from 'fs';
+const buffer = Buffer.from(screenshot.base64, 'base64');
+fs.writeFileSync('screenshot.jpg', buffer);
+
+console.log(`Screenshot size: ${screenshot.width}x${screenshot.height}`);
+```
+
+### InstalledApp
+
+Information about an installed iOS app.
+
+<ResponseField name="bundleId" type="string">
+  The app's bundle identifier
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  The app's display name
+</ResponseField>
+
+<ResponseField name="installType" type="string">
+  How the app was installed (e.g., "User", "System")
+</ResponseField>
+
+## Sandbox Types
+
+### XcodeBuildConfig
+
+Build configuration for xcodebuild command.
+
+<ResponseField name="workspace" type="string" optional>
+  Path to the .xcworkspace file
+</ResponseField>
+
+<ResponseField name="project" type="string" optional>
+  Path to the .xcodeproj file
+</ResponseField>
+
+<ResponseField name="scheme" type="string" optional>
+  Build scheme to use
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { createXCodeSandboxClient } from 'limrun';
+
+const sandbox = await createXCodeSandboxClient({
+  apiUrl: 'https://sandbox.example.com',
+  token: 'your-token',
+});
+
+const build = sandbox.xcodebuild({
+  workspace: 'MyApp.xcworkspace',
+  scheme: 'MyApp',
+});
+
+build.stdout.on('data', (line) => console.log(line));
+const { exitCode } = await build;
+```
+
+### SyncOptions
+
+Options for syncing source code to the sandbox.
+
+<ResponseField name="cacheKey" type="string" default="'xcode-sandbox'">
+  Cache scoping key for delta basis caching
+</ResponseField>
+
+<ResponseField name="basisCacheDir" type="string" optional>
+  Directory for storing delta sync cache
+</ResponseField>
+
+<ResponseField name="maxPatchBytes" type="number" optional>
+  Maximum patch size before falling back to full upload
+</ResponseField>
+
+<ResponseField name="watch" type="boolean" default="false">
+  If true, watch the folder and re-sync on changes
+</ResponseField>
+
+<ResponseField name="filter" type="(relativePath: string) => boolean" optional>
+  Filter function to include/exclude files and directories
+</ResponseField>
+
+**Example:**
+
+```typescript
+const result = await sandbox.sync('./MyApp', {
+  watch: true,
+  filter: (path) => !path.startsWith('build/'),
+});
+
+// Stop watching when done
+if (result.stopWatching) {
+  result.stopWatching();
+}
+```
+
+### SimulatorConfig
+
+Simulator connection details for configuring the sandbox.
+
+<ResponseField name="apiUrl" type="string" required>
+  The API URL of the simulator (limulator)
+</ResponseField>
+
+<ResponseField name="token" type="string" optional>
+  Auth token for the simulator. If not provided, uses the sandbox token
+</ResponseField>
+
+## Tunnel Types
+
+### Tunnel
+
+Represents an active TCP tunnel.
+
+<ResponseField name="address" type="{ address: string; port: number }">
+  Local address and port of the tunnel
+</ResponseField>
+
+<ResponseField name="close" type="() => void">
+  Close the tunnel
+</ResponseField>
+
+<ResponseField name="getConnectionState" type="() => TunnelConnectionState">
+  Get current WebSocket connection state
+</ResponseField>
+
+<ResponseField name="onConnectionStateChange" type="(callback) => () => void">
+  Register callback for connection state changes. Returns unregister function.
+</ResponseField>
+
+**Example:**
+
+```typescript
+const tunnel = await client.startAdbTunnel();
+
+console.log(`ADB tunnel: ${tunnel.address.address}:${tunnel.address.port}`);
+
+// Monitor connection state
+const unsubscribe = tunnel.onConnectionStateChange((state) => {
+  console.log(`Tunnel state: ${state}`);
+});
+
+// Close when done
+tunnel.close();
+unsubscribe();
+```
+
+### TunnelConnectionState
+
+Connection state of a tunnel.
+
+**Type Definition:**
+
+```typescript
+type TunnelConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
+```
+
+### TunnelMode
+
+Tunnel mode for TCP connections.
+
+**Type Definition:**
+
+```typescript
+type TunnelMode = 'singleton' | 'multiplexed';
+```
+
+<ResponseField name="singleton" type="string">
+  Single TCP connection forwarded to WebSocket (default)
+</ResponseField>
+
+<ResponseField name="multiplexed" type="string">
+  Multiple TCP connections multiplexed over a single WebSocket
+</ResponseField>
+
+## Execution Types
+
+### ExecRequest
+
+Request parameters for executing commands.
+
+<ResponseField name="command" type="'xcodebuild'" required>
+  The command to execute
+</ResponseField>
+
+<ResponseField name="xcodebuild" type="XcodeBuildConfig" optional>
+  Configuration for xcodebuild command
+</ResponseField>
+
+### ExecResult
+
+Result of a command execution.
+
+<ResponseField name="exitCode" type="number">
+  Process exit code
+</ResponseField>
+
+<ResponseField name="execId" type="string">
+  Unique execution identifier
+</ResponseField>
+
+<ResponseField name="status" type="'SUCCEEDED' | 'FAILED' | 'CANCELLED'">
+  Execution status
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { exec } from 'limrun';
+
+const process = exec(
+  { command: 'xcodebuild', xcodebuild: { scheme: 'MyApp' } },
+  { apiUrl: 'https://sandbox.example.com', token: 'your-token' }
+);
+
+process.stdout.on('data', (line) => console.log(line));
+
+const result = await process;
+console.log(`Exit code: ${result.exitCode}`);
+console.log(`Status: ${result.status}`);
+```
+
+## Client Options
+
+### ClientOptions
+
+Configuration options for the main Limrun client.
+
+<ResponseField name="apiKey" type="string" optional>
+  API key for authentication. Defaults to `process.env['LIM_API_KEY']`
+</ResponseField>
+
+<ResponseField name="baseURL" type="string" optional>
+  Override the default base URL. Defaults to `process.env['LIMRUN_BASE_URL']`
+</ResponseField>
+
+<ResponseField name="timeout" type="number" optional>
+  Maximum time in milliseconds to wait for a response
+</ResponseField>
+
+<ResponseField name="maxRetries" type="number" default="2">
+  Maximum number of retry attempts for failed requests
+</ResponseField>
+
+<ResponseField name="fetch" type="Fetch" optional>
+  Custom fetch function implementation
+</ResponseField>
+
+<ResponseField name="fetchOptions" type="RequestInit" optional>
+  Additional options passed to fetch calls
+</ResponseField>
+
+<ResponseField name="logger" type="Logger" optional>
+  Custom logger instance
+</ResponseField>
+
+<ResponseField name="logLevel" type="LogLevel" optional>
+  Controls SDK logging verbosity
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { Limrun } from 'limrun';
+
+const client = new Limrun({
+  apiKey: 'your-api-key',
+  timeout: 60000, // 60 seconds
+  maxRetries: 3,
+  logLevel: 'debug',
+});
+```
