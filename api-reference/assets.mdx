@@ -87,6 +87,69 @@ const instance = await limrun.androidInstances.create({
 
 ---
 
+### getOrUpload()
+
+Simplified method that combines `getOrCreate` with automatic file upload. This method reads the file from disk, computes its MD5, and only uploads if the file doesn't already exist or has changed.
+
+```typescript
+getOrUpload(
+  body: AssetGetOrUploadParams,
+  options?: RequestOptions
+): Promise<AssetGetOrUploadResponse>
+```
+
+#### Parameters
+
+<ParamField body="path" type="string" required>
+  The path to the file to upload.
+</ParamField>
+
+<ParamField body="name" type="string" optional>
+  The name for the asset. Defaults to the basename of the file path.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="id" type="string" required>
+  Unique identifier for the asset.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  The name of the asset.
+</ResponseField>
+
+<ResponseField name="signedDownloadUrl" type="string" required>
+  Pre-signed URL for downloading the asset file.
+</ResponseField>
+
+<ResponseField name="md5" type="string" required>
+  MD5 hash of the uploaded file.
+</ResponseField>
+
+#### Example
+
+```typescript
+// Upload a file - automatically handles MD5 checking and upload
+const asset = await limrun.assets.getOrUpload({
+  path: "./my-app-v1.2.3.apk"
+});
+
+console.log("Asset ready:", asset.signedDownloadUrl);
+console.log("MD5:", asset.md5);
+
+// Use with custom name
+const renamedAsset = await limrun.assets.getOrUpload({
+  path: "./build/app.apk",
+  name: "my-app-v1.2.3.apk"
+});
+```
+
+<Note>
+  This method is more convenient than `getOrCreate` because it automatically computes the MD5 hash and handles the upload process. It will skip the upload if an asset with the same name and MD5 already exists.
+</Note>
+
+---
+
 ### list()
 
 List organization's assets with optional filters.

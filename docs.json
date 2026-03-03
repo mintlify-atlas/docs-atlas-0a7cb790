@@ -113,7 +113,11 @@
               "examples/appium-ios",
               "examples/playwright",
               "examples/fullstack-app",
-              "examples/ios-hot-reload"
+              "examples/ios-hot-reload",
+              "examples/asset",
+              "examples/tunnel",
+              "examples/websocket-ios",
+              "examples/xcode-sandbox"
             ]
           }
         ]

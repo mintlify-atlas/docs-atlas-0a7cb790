@@ -1,0 +1,217 @@
+---
+title: 'ADB Tunnel Example'
+description: 'Connect to Android instances via ADB tunnel for debugging and development'
+---
+
+This example demonstrates how to establish an ADB tunnel to an Android instance, enabling you to use standard Android development tools like `adb` commands, Android Studio, and other ADB-dependent workflows.
+
+## Overview
+
+The ADB tunnel creates a local TCP connection that forwards to the Android instance's ADB server over WebSocket. This allows you to:
+- Run `adb devices` to see the connected device
+- Use Android Studio for debugging
+- Execute any `adb` command (shell, logcat, install, etc.)
+- Use Scrcpy for screen mirroring
+
+## Complete Example
+
+```typescript
+import { Limrun, createInstanceClient } from '@limrun/api';
+
+const limrun = new Limrun({ apiKey: process.env['LIM_API_KEY'] });
+
+// Create an Android instance
+console.time('create');
+const androidInstance = await limrun.androidInstances.create({ wait: true });
+console.log(`Instance ${androidInstance.metadata.id} created`);
+console.timeEnd('create');
+
+// Connect via WebSocket
+const client = await createInstanceClient({
+  adbUrl: androidInstance.status.adbWebSocketUrl!,
+  endpointUrl: androidInstance.status.endpointWebSocketUrl!,
+  token: androidInstance.status.token,
+});
+
+// Start the ADB tunnel
+const { address, close } = await client.startAdbTunnel();
+console.log(`ADB connected on ${address.address}:${address.port}`);
+console.log('You can now run `adb devices` to see the connected device');
+
+// Handle graceful shutdown
+process.on('SIGINT', () => {
+  console.log('Closing the ADB tunnel');
+  close();
+  process.exit(0);
+});
+
+// Keep the tunnel open for 30 seconds (or until Ctrl+C)
+await new Promise((resolve) => setTimeout(resolve, 30_000));
+console.log('Closing the ADB tunnel');
+close();
+```
+
+## How It Works
+
+### 1. Creating the Tunnel
+
+The `startAdbTunnel()` method:
+- Creates a local TCP server
+- Forwards all traffic to the Android instance via WebSocket
+- Returns the local address and a cleanup function
+
+```typescript
+const { address, close } = await client.startAdbTunnel();
+// address = { address: '127.0.0.1', port: 5037 }
+```
+
+### 2. Using ADB Commands
+
+Once the tunnel is established, use standard ADB commands:
+
+```bash
+# List connected devices
+adb devices
+
+# Install an APK
+adb install app.apk
+
+# View logs
+adb logcat
+
+# Access shell
+adb shell
+
+# Forward ports
+adb forward tcp:8080 tcp:8080
+```
+
+### 3. Connection Monitoring
+
+The tunnel automatically handles reconnection if the WebSocket connection drops:
+
+```typescript
+const tunnel = await client.startAdbTunnel();
+
+// Monitor connection state
+tunnel.onConnectionStateChange((state) => {
+  console.log(`Tunnel state: ${state}`);
+  // States: 'connecting', 'connected', 'disconnected', 'reconnecting'
+});
+
+// Check current state
+console.log(tunnel.getConnectionState());
+```
+
+### 4. Cleanup
+
+Always close the tunnel when done:
+
+```typescript
+// Manual cleanup
+close();
+
+// Or use try/finally
+const tunnel = await client.startAdbTunnel();
+try {
+  // Use the tunnel
+  await runAdbCommands();
+} finally {
+  tunnel.close();
+}
+```
+
+## Android Studio Integration
+
+To use Android Studio with Limrun instances:
+
+<Steps>
+  <Step title="Start the tunnel">
+    Run your script to establish the ADB tunnel
+    ```bash
+    node tunnel-example.js
+    ```
+  </Step>
+  
+  <Step title="Verify connection">
+    Check that the device appears:
+    ```bash
+    adb devices
+    ```
+  </Step>
+  
+  <Step title="Open Android Studio">
+    The device will automatically appear in Android Studio's device dropdown
+  </Step>
+  
+  <Step title="Deploy and debug">
+    Use Android Studio normally - deploy apps, debug, profile, etc.
+  </Step>
+</Steps>
+
+## Advanced Usage
+
+### Tunnel Modes
+
+The tunnel supports two modes:
+
+```typescript
+// Singleton mode (default) - one TCP connection per WebSocket
+const tunnel = await startTcpTunnel(
+  url,
+  'singleton'
+);
+
+// Multiplexed mode - multiple TCP connections over one WebSocket
+const tunnel = await startTcpTunnel(
+  url,
+  'multiplexed'
+);
+```
+
+For ADB tunnels, singleton mode is typically sufficient.
+
+### Custom Reconnection
+
+Configure reconnection behavior:
+
+```typescript
+const tunnel = await startTcpTunnel(url, 'singleton', {
+  maxReconnectAttempts: 10,
+  reconnectDelay: 2000,
+  maxReconnectDelay: 60000,
+  logLevel: 'debug',
+});
+```
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Development" icon="code">
+    Use Android Studio, VS Code, or IntelliJ for development
+  </Card>
+  
+  <Card title="Debugging" icon="bug">
+    Use Android Profiler, logcat, and debugger tools
+  </Card>
+  
+  <Card title="Testing" icon="flask">
+    Run instrumented tests using Espresso or UI Automator
+  </Card>
+  
+  <Card title="Automation" icon="robot">
+    Integrate with CI/CD pipelines using ADB commands
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tunneling Guide" icon="tower-broadcast" href="/guides/tunneling">
+    Learn more about TCP tunneling
+  </Card>
+  
+  <Card title="Android Instances" icon="android" href="/guides/android-instances">
+    Explore Android instance features
+  </Card>
+</CardGroup>

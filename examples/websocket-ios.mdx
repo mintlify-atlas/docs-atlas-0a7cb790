@@ -1,0 +1,282 @@
+---
+title: 'iOS WebSocket Client API Demo'
+description: 'Comprehensive demonstration of all iOS client methods and features'
+---
+
+This example demonstrates the complete iOS client API, showcasing every available method for interacting with iOS Simulator instances via WebSocket.
+
+## Overview
+
+This is a comprehensive test suite that demonstrates:
+- Screenshot capture and element tree inspection
+- App lifecycle management (launch, terminate, list)
+- User interaction (tap, type, keyboard control)
+- Accessibility-based element operations
+- Command execution (simctl, xcrun, xcodebuild)
+- Log streaming and file system inspection
+
+## Complete Example
+
+```typescript
+import fs from 'fs';
+import path from 'path';
+import { Ios, Limrun } from '@limrun/api';
+
+const limrun = new Limrun({ apiKey: process.env['LIM_API_KEY'] });
+
+// Create an iOS instance
+const instance = await limrun.iosInstances.create({
+  wait: true,
+  reuseIfExists: true,
+  metadata: {
+    labels: { name: 'websocket-ios-example' },
+  },
+});
+
+// Connect to the instance
+const client = await Ios.createInstanceClient({
+  apiUrl: instance.status.apiUrl,
+  token: instance.status.token,
+  logLevel: 'debug',
+});
+
+console.log('Connected to instance');
+console.log('Device info:', client.deviceInfo);
+
+try {
+  // Screenshot
+  const screenshot = await client.screenshot();
+  fs.writeFileSync('screenshot.jpg', Buffer.from(screenshot.base64, 'base64'));
+  console.log(`Screenshot: ${screenshot.width}x${screenshot.height}`);
+
+  // Element tree (accessibility hierarchy)
+  const elementTree = await client.elementTree();
+  const tree = JSON.parse(elementTree);
+  console.log(`Root element type: ${tree.type}`);
+
+  // List installed apps
+  const apps = await client.listApps();
+  console.log(`Found ${apps.length} installed apps`);
+
+  // Launch Safari
+  await client.launchApp('com.apple.mobilesafari');
+  console.log('Launched Safari');
+
+  // Open a URL
+  await client.openUrl('https://www.example.com');
+  console.log('Opened URL');
+
+  // Tap at coordinates
+  await client.tap(screenshot.width / 2, screenshot.height / 2);
+  console.log('Tapped at center');
+
+  // Tap element by selector
+  const result = await client.tapElement({ elementType: 'TextField' });
+  console.log(`Tapped element: ${result.elementType}`);
+
+  // Type text
+  await client.typeText('Hello from TypeScript SDK!');
+  console.log('Typed text');
+
+  // Press Enter
+  await client.pressKey('enter');
+
+  // Set element value (faster than typing)
+  await client.setElementValue('https://apple.com', { 
+    elementType: 'TextField' 
+  });
+
+  // Toggle keyboard
+  await client.toggleKeyboard();
+
+  // Run simctl command (streaming)
+  const execution = client.simctl(['listapps', 'booted']);
+  execution.on('line-stdout', (line) => {
+    console.log(`stdout: ${line.substring(0, 100)}`);
+  });
+  const cmdResult = await execution.wait();
+  console.log(`Simctl exited with code: ${cmdResult.code}`);
+
+  // List open files
+  const openFiles = await client.lsof();
+  console.log(`Found ${openFiles.length} open unix sockets`);
+
+  // Get SDK version
+  const xcrunResult = await client.xcrun(['--show-sdk-version']);
+  console.log('SDK version:', xcrunResult.stdout.trim());
+
+  // Get Xcode version
+  const xcodebuildResult = await client.xcodebuild(['-version']);
+  console.log('Xcode version:', xcodebuildResult.stdout);
+
+  console.log('✅ All tests completed!');
+} finally {
+  client.disconnect();
+  console.log('Disconnected from instance');
+}
+```
+
+## Key Features Demonstrated
+
+### Screen Interaction
+
+```typescript
+// Coordinate-based tap
+await client.tap(x, y);
+
+// Tap with explicit screen size
+await client.tapWithScreenSize(x, y, screenWidth, screenHeight);
+
+// Element-based tap (accessibility)
+await client.tapElement({ 
+  elementType: 'Button',
+  label: 'Submit'
+});
+
+// Scroll
+await client.scroll('up', 200, { 
+  momentum: 0.5 
+});
+
+// Set orientation
+await client.setOrientation('Landscape');
+```
+
+### Keyboard and Text Input
+
+```typescript
+// Type text character by character
+await client.typeText('Hello', /* pressEnter */ true);
+
+// Set text directly (much faster)
+await client.setElementValue('Hello', { 
+  elementType: 'TextField' 
+});
+
+// Press specific keys
+await client.pressKey('enter');
+await client.pressKey('a', ['command']); // Cmd+A
+
+// Toggle software keyboard
+await client.toggleKeyboard();
+```
+
+### App Management
+
+```typescript
+// List installed apps
+const apps = await client.listApps();
+
+// Launch app
+await client.launchApp('com.example.app', 'RelaunchIfRunning');
+
+// Terminate app
+await client.terminateApp('com.example.app');
+
+// Install app
+await client.installApp(assetUrl, {
+  md5: 'abc123',
+  launchMode: 'ForegroundIfRunning'
+});
+
+// Open URL
+await client.openUrl('myapp://deeplink');
+```
+
+### Accessibility Elements
+
+```typescript
+// Get element tree
+const tree = await client.elementTree();
+const treeAtPoint = await client.elementTree({ x: 100, y: 200 });
+
+// Element operations
+await client.tapElement({ label: 'Submit' });
+await client.incrementElement({ elementType: 'Slider' });
+await client.decrementElement({ elementType: 'Stepper' });
+await client.setElementValue('text', { accessibilityId: 'username' });
+```
+
+### Commands and Debugging
+
+```typescript
+// Simctl (streaming)
+const execution = client.simctl(['listapps', 'booted']);
+execution.on('line-stdout', (line) => console.log(line));
+await execution.wait();
+
+// Xcrun
+const result = await client.xcrun(['--sdk', 'iphonesimulator', '--show-sdk-version']);
+console.log(result.stdout);
+
+// Xcodebuild
+const xcode = await client.xcodebuild(['-version']);
+console.log(xcode.stdout);
+
+// List open files (Unix sockets)
+const files = await client.lsof();
+
+// Copy file to simulator
+const path = await client.cp('myfile.txt', '/local/path/to/file.txt');
+```
+
+### Log Streaming
+
+```typescript
+// Stream app logs
+const stream = client.streamAppLog('com.example.app');
+stream.on('data', (line) => console.log(line));
+stream.stop(); // Stop streaming
+
+// Stream syslog
+const syslogStream = client.streamSyslog();
+syslogStream.on('data', (line) => console.log(line));
+
+// Get historical logs
+const logs = await client.appLogTail('com.example.app', 100);
+console.log(logs);
+```
+
+## Device Information
+
+The client provides device information immediately upon connection:
+
+```typescript
+const client = await Ios.createInstanceClient({ ... });
+
+console.log(client.deviceInfo);
+// {
+//   udid: 'ABC-123',
+//   screenWidth: 390,
+//   screenHeight: 844,
+//   model: 'iPhone 15 Pro'
+// }
+```
+
+## Connection Management
+
+```typescript
+// Monitor connection state
+client.onConnectionStateChange((state) => {
+  console.log(`State: ${state}`);
+  // 'connecting', 'connected', 'disconnected', 'reconnecting'
+});
+
+// Check current state
+console.log(client.getConnectionState());
+
+// Disconnect
+client.disconnect();
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="iOS Client API" icon="mobile" href="/api-reference/ios-client">
+    Complete iOS client API reference
+  </Card>
+  
+  <Card title="iOS Instances" icon="rocket" href="/guides/ios-instances">
+    Learn about iOS instance management
+  </Card>
+</CardGroup>

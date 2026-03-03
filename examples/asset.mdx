@@ -1,0 +1,166 @@
+---
+title: 'Asset Upload and Installation'
+description: 'Upload apps to Limrun Asset Storage and install them on instances'
+---
+
+This example demonstrates how to upload iOS Simulator builds to Limrun Asset Storage and install them on instances. By uploading assets once, you can reuse them across multiple instances without re-uploading.
+
+## Overview
+
+The asset workflow involves:
+1. Downloading or preparing your app build
+2. Uploading it to Limrun Asset Storage using `getOrUpload`
+3. Creating an instance
+4. Installing the app on the instance using the asset URL
+
+## Complete Example
+
+This example downloads Expo Go and demonstrates the full asset workflow:
+
+```typescript
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { Limrun, Ios } from '@limrun/api';
+
+// Create a temporary directory for all operations
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'expo-go-'));
+
+// Download the Expo Go iOS Simulator build
+console.log('Downloading Expo Go iOS Simulator build...');
+const expoGoPublicUrl =
+  'https://github.com/expo/expo-go-releases/releases/download/Expo-Go-54.0.6/Expo-Go-54.0.6.tar.gz';
+const expoGoLocalPath = path.join(tempDir, 'expo-go-54.0.6.tar.gz');
+const response = await fetch(expoGoPublicUrl);
+const buffer = await response.arrayBuffer();
+fs.writeFileSync(expoGoLocalPath, Buffer.from(buffer));
+console.log('Expo Go iOS Simulator build downloaded');
+
+const limrun = new Limrun({ apiKey: process.env['LIM_API_KEY'] });
+
+// Upload the zip file to Limrun Asset Storage
+console.log('Uploading to Limrun Asset Storage...');
+const asset = await limrun.assets.getOrUpload({ path: expoGoLocalPath });
+console.log('Uploaded:', asset.name);
+
+// Create an iOS instance
+console.log('Creating iOS Simulator instance...');
+const instance = await limrun.iosInstances.create({
+  wait: true,
+  reuseIfExists: true,
+  metadata: {
+    labels: {
+      name: 'expo-go-example',
+    },
+  },
+});
+console.log(`Instance ${instance.metadata.id} created`);
+
+// Connect to the instance
+const ios = await Ios.createInstanceClient({
+  apiUrl: instance.status.apiUrl,
+  token: instance.status.token,
+});
+
+// Install the app from the asset
+console.log('Installing app from asset...');
+await ios.installApp(asset.signedDownloadUrl);
+console.log('App installed successfully');
+
+ios.disconnect();
+
+// Clean up temporary directory
+fs.rmSync(tempDir, { recursive: true, force: true });
+
+console.log(`Connect: https://console.limrun.com/stream/${instance.metadata.id}`);
+```
+
+## How It Works
+
+### 1. Asset Upload with MD5 Deduplication
+
+The `getOrUpload` method automatically:
+- Computes the MD5 hash of your file
+- Checks if an asset with the same name and MD5 already exists
+- Only uploads if the file doesn't exist or has changed
+
+```typescript
+const asset = await limrun.assets.getOrUpload({ 
+  path: './my-app.tar.gz' 
+});
+
+// Returns the signed download URL immediately if asset exists
+// Only uploads if the file is new or modified
+```
+
+### 2. Using initialAssets
+
+You can also configure the instance to pre-install the app during creation:
+
+```typescript
+const instance = await limrun.iosInstances.create({
+  wait: true,
+  spec: {
+    initialAssets: [
+      {
+        kind: 'App',
+        source: 'AssetName',
+        assetName: asset.name,
+      },
+    ],
+  },
+});
+```
+
+### 3. On-Demand Installation
+
+Install apps after the instance is created:
+
+```typescript
+const ios = await Ios.createInstanceClient({
+  apiUrl: instance.status.apiUrl,
+  token: instance.status.token,
+});
+
+// Install using the asset's signed download URL
+await ios.installApp(asset.signedDownloadUrl);
+```
+
+## Benefits
+
+<CardGroup cols={2}>
+  <Card title="Efficient Storage" icon="database">
+    Upload once, reuse across many instances
+  </Card>
+  
+  <Card title="Fast Deployment" icon="rocket">
+    Skip upload time when creating new instances
+  </Card>
+  
+  <Card title="Version Control" icon="code-branch">
+    Manage multiple versions of your app as separate assets
+  </Card>
+  
+  <Card title="Bandwidth Savings" icon="download">
+    MD5 deduplication prevents unnecessary uploads
+  </Card>
+</CardGroup>
+
+## Use Cases
+
+- **CI/CD Pipelines**: Upload builds from your CI and install them on test instances
+- **Multi-Environment Testing**: Test the same build across different device configurations
+- **Team Collaboration**: Share builds via asset names without re-uploading
+- **Version Testing**: Keep multiple versions in storage and switch between them
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Asset Management" icon="box" href="/guides/asset-management">
+    Learn more about asset management
+  </Card>
+  
+  <Card title="iOS Instances" icon="mobile" href="/guides/ios-instances">
+    Explore iOS instance features
+  </Card>
+</CardGroup>

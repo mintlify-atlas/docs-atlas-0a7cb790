@@ -1,0 +1,273 @@
+---
+title: 'Xcode Sandbox with Hot Reload'
+description: 'Build and test iOS apps in the cloud with automatic code synchronization'
+---
+
+This example demonstrates how to develop iOS apps without a Mac using Limrun's Xcode sandbox. Code changes are automatically synced and you can trigger builds that install directly to the connected iOS Simulator.
+
+## Overview
+
+The Xcode sandbox enables:
+- Cloud-based iOS development without macOS
+- Automatic code synchronization with delta patching
+- Remote xcodebuild execution
+- Hot reload workflow for rapid iteration
+- MCP server integration for AI agents
+
+## Complete Example
+
+```typescript
+import { Limrun, createXCodeSandboxClient } from '@limrun/api';
+
+const lim = new Limrun({ apiKey: process.env['LIM_API_KEY'] });
+
+// Create an iOS instance with Xcode sandbox enabled
+console.log('Creating iOS instance with Xcode sandbox...');
+const instance = await lim.iosInstances.create({
+  wait: true,
+  reuseIfExists: true,
+  metadata: {
+    labels: { name: 'ios-native-build-example' },
+  },
+  spec: {
+    sandbox: {
+      xcode: {
+        enabled: true,
+      },
+    },
+  },
+});
+
+const sandboxUrl = instance.status.sandbox?.xcode?.url;
+if (!sandboxUrl) {
+  throw new Error('Xcode sandbox URL not available');
+}
+
+// Connect to the sandbox
+const sandbox = await createXCodeSandboxClient({
+  apiUrl: sandboxUrl,
+  token: instance.status.token,
+});
+
+// Sync code with watch mode enabled
+console.log('Syncing code...');
+await sandbox.sync('./my-ios-app', { watch: true });
+
+// Trigger a build
+console.log('Starting xcodebuild...');
+const build = sandbox.xcodebuild();
+
+// Stream build output
+build.stdout.on('data', (line) => {
+  console.log(line.toString());
+});
+
+build.stderr.on('data', (line) => {
+  console.error(line.toString());
+});
+
+// Wait for completion
+const result = await build;
+console.log(`Build finished with exit code: ${result.exitCode}`);
+
+console.log(`View instance: https://console.limrun.com/stream/${instance.metadata.id}`);
+```
+
+## How It Works
+
+### 1. Code Synchronization
+
+The `sync()` method uses delta patching (xdelta3) for efficient synchronization:
+
+```typescript
+// One-time sync
+await sandbox.sync('./my-ios-app');
+
+// Watch mode - auto-sync on file changes
+await sandbox.sync('./my-ios-app', { watch: true });
+
+// Custom filter to exclude files
+await sandbox.sync('./my-ios-app', {
+  watch: true,
+  filter: (path) => {
+    // Exclude build artifacts
+    return !path.startsWith('build/') && 
+           !path.includes('.xcodeproj/xcuserdata');
+  }
+});
+```
+
+### 2. Building
+
+Trigger builds programmatically:
+
+```typescript
+// Start build
+const build = sandbox.xcodebuild({
+  scheme: 'MyApp',
+  workspace: 'MyApp.xcworkspace'
+});
+
+// Stream output
+build.stdout.on('data', (line) => console.log(line));
+build.stderr.on('data', (line) => console.error(line));
+
+// Wait for completion
+const { exitCode, stdout, stderr } = await build;
+
+if (exitCode === 0) {
+  console.log('Build succeeded!');
+} else {
+  console.error('Build failed:', stderr);
+}
+```
+
+### 3. Watch Mode Workflow
+
+With watch mode enabled, your development cycle becomes:
+
+<Steps>
+  <Step title="Edit code locally">
+    Make changes to your iOS app source files
+  </Step>
+  
+  <Step title="Automatic sync">
+    Changes are automatically detected and synced to the sandbox
+  </Step>
+  
+  <Step title="Trigger build">
+    Run `xcodebuild` when ready to test
+  </Step>
+  
+  <Step title="App updates">
+    The app is automatically installed on the connected iOS Simulator
+  </Step>
+</Steps>
+
+## MCP Server Integration
+
+The example includes an MCP server for AI agent integration:
+
+```typescript
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
+const mcp = new McpServer({ name: 'xcodebuild', version: '1.0.0' });
+
+mcp.registerTool(
+  'build',
+  {
+    title: 'xcodebuild',
+    description: 'Runs xcodebuild and installs the app on the remote simulator',
+  },
+  async () => {
+    let buffer: string[] = [];
+    await runBuild((line) => buffer.push(line));
+    return { 
+      content: [{ 
+        type: 'text', 
+        text: buffer.join('\n') 
+      }] 
+    };
+  },
+);
+```
+
+### Configure AI Agent
+
+Add to your MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "xcode": {
+      "url": "http://localhost:3000/"
+    }
+  }
+}
+```
+
+Or with Claude CLI:
+
+```bash
+claude mcp add xcode --transport http http://localhost:3000
+```
+
+## HTTP Endpoint
+
+The example exposes an HTTP endpoint for manual builds:
+
+```bash
+# Trigger a build via HTTP
+curl http://localhost:3000/xcodebuild
+
+# Build output is streamed in real-time
+```
+
+## Prerequisites
+
+Install xdelta3 for delta patching:
+
+<CodeGroup>
+```bash macOS
+brew install xdelta
+```
+
+```bash Ubuntu
+sudo apt-get install xdelta3
+```
+
+```bash Windows (WSL)
+sudo apt-get install xdelta3
+```
+</CodeGroup>
+
+## Performance
+
+The sync mechanism is highly efficient:
+
+- **Initial sync**: Full file upload (~10-30 seconds for typical iOS project)
+- **Incremental sync**: Only changed bytes are sent (~100ms-1s)
+- **Watch mode overhead**: Minimal CPU and memory usage
+- **Build time**: Same as local xcodebuild (varies by project)
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Cloud Development" icon="cloud">
+    Develop iOS apps on Linux, Windows, or any platform
+  </Card>
+  
+  <Card title="CI/CD" icon="gears">
+    Automated builds and tests without Mac infrastructure
+  </Card>
+  
+  <Card title="AI Agents" icon="robot">
+    Let AI agents build and test iOS apps autonomously
+  </Card>
+  
+  <Card title="Team Collaboration" icon="users">
+    Share development environments instantly
+  </Card>
+</CardGroup>
+
+## Limitations
+
+<Note>
+  The Xcode sandbox currently supports:
+  - iOS Simulator builds only (not device builds)
+  - Standard xcodebuild commands
+  - Swift Package Manager dependencies
+  - CocoaPods (if committed)
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Xcode Sandbox API" icon="cube" href="/api-reference/xcode-sandbox">
+    Complete API reference for the sandbox
+  </Card>
+  
+  <Card title="Folder Sync" icon="folder-sync" href="/api-reference/folder-sync">
+    Learn about the sync mechanism
+  </Card>
+</CardGroup>
