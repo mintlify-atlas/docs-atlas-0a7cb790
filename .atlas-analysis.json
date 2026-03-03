@@ -1,0 +1,155 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Limrun TypeScript SDK",
+  "projectDescription": "TypeScript/JavaScript SDK for interacting with Limrun's mobile device automation and testing platform",
+  "theme": "palm",
+  "primaryColor": "#6366F1",
+  "lightColor": "#818CF8",
+  "darkColor": "#4F46E5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "core-concepts/authentication",
+              "core-concepts/error-handling",
+              "core-concepts/retries-and-timeouts"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/android-instances",
+              "guides/ios-instances",
+              "guides/asset-management",
+              "guides/tunneling",
+              "guides/xcode-sandbox",
+              "guides/pagination"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/logging",
+              "advanced/custom-fetch",
+              "advanced/streaming-responses"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Client",
+            "pages": [
+              "api-reference/client",
+              "api-reference/client-options"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "api-reference/android-instances",
+              "api-reference/ios-instances",
+              "api-reference/assets"
+            ]
+          },
+          {
+            "group": "Instance Clients",
+            "pages": [
+              "api-reference/instance-client",
+              "api-reference/ios-client"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api-reference/xcode-sandbox",
+              "api-reference/exec",
+              "api-reference/tunnel",
+              "api-reference/folder-sync"
+            ]
+          },
+          {
+            "group": "Types & Errors",
+            "pages": [
+              "api-reference/types",
+              "api-reference/errors"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/overview",
+              "examples/appium-ios",
+              "examples/playwright",
+              "examples/fullstack-app",
+              "examples/ios-hot-reload"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Android and iOS instance management",
+    "Real-time device control via WebSocket",
+    "Asset management and deployment",
+    "TCP tunneling for ADB and debugging",
+    "Xcode build sandbox with hot reload",
+    "Folder synchronization with delta patching",
+    "Auto-pagination for list operations",
+    "Built-in retry logic and error handling",
+    "TypeScript-first with comprehensive types",
+    "Multiple runtime support (Node, Deno, Bun, Cloudflare Workers)"
+  ],
+  "publicApiSurface": [
+    "Limrun (main client class)",
+    "client.androidInstances.create()",
+    "client.androidInstances.list()",
+    "client.androidInstances.get()",
+    "client.androidInstances.delete()",
+    "client.iosInstances.create()",
+    "client.iosInstances.list()",
+    "client.iosInstances.get()",
+    "client.iosInstances.delete()",
+    "client.assets.list()",
+    "client.assets.get()",
+    "client.assets.getOrCreate()",
+    "client.assets.delete()",
+    "createInstanceClient()",
+    "createIosClient()",
+    "createXCodeSandboxClient()",
+    "exec()",
+    "startTcpTunnel()",
+    "IosClient.screenshot()",
+    "IosClient.tap()",
+    "IosClient.tapElement()",
+    "IosClient.swipe()",
+    "IosClient.typeText()",
+    "IosClient.launchApp()",
+    "IosClient.terminateApp()",
+    "IosClient.installApp()",
+    "IosClient.simctl()",
+    "IosClient.syncApp()",
+    "XCodeSandboxClient.sync()",
+    "XCodeSandboxClient.xcodebuild()"
+  ]
+}
